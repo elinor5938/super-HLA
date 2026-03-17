@@ -1,12 +1,39 @@
 # Refactored Filtering Algorithm Pipeline
 
-This acts as a modular, type-safe, and configurable alternative to the original thesis pipeline. It eliminates hardcoded variables in the source code, introduces a Pythonic project structure, and safely handles NetMHCpan predictions under the hood.
+This acts as a modular, type-safe, and configurable alternative to the original
+thesis pipeline. It eliminates hardcoded variables in the source code,
+introduces a Pythonic project structure, and safely handles NetMHCpan
+predictions under the hood.
 
 ## 🛠️ Environment Configuration
 
-Before running any script, you must configure your `.env` file at the root of the project. The pipeline reads this file automatically.
+### 1. Setup Virtual Environment
 
-### Required Environment Variables
+For this project we will need specific packages that require Python 3.10+. You will need to have a `.venv` folder. If you don't have one, run:
+
+**On macOS:**
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+```
+
+**On Windows:**
+You will need to use WSL for netMHCpan to work. The setup is quite hard - you will need to open a VSCode project from the WSL user. Please make sure you do it before continuing. Use the macOS installation for the virtual environment. From now on - you can use only `.\.venv\Scripts\Activate.bat`.
+
+Make sure you validate that your IDE debugger/interpreter is also set to this specific `.venv`.
+
+Install the required packages:
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Configure Environment Variables
+
+Before running any script, you must configure your `.env` file at the root of
+the project. The pipeline reads this file automatically.
+
+#### Required Environment Variables
 
 ```env
 # Path to your NetMHCpan directory. Crucial for executions.
@@ -22,27 +49,24 @@ MHC_DIR_PATH=/path/to/netMHCpan-4.2/
 
 ## 🚀 How to Run
 
-Instead of manually editing and uncommenting lines of python code, the new pipeline uses a robust CLI (Command Line Interface).
-
-1. Change directory to the refactored pipeline:
-   ```bash
-   cd /path/to/your/project/refactored-pipeline
-   ```
-2. Make sure you activate your python virtual environment.
+We are using a robust CLI (Command Line Interface).
 
 **Run a Random Peptide Simulation:**
+
 ```bash
 python main.py --mode random --seed 9 --accepted 2
 ```
 
 **Run an External FASTA Peptide List Simulation:**
+
 ```bash
-python main.py --mode external --seed 9 --fasta ../input/peptides_for_pred_9.txt --accepted 2
+python main.py --mode external --seed 9 --fasta input/peptides_for_pred_9.txt --accepted 2
 ```
 
 ### CLI Arguments Breakdown
 
-- `--mode`: Either `random` (generates random amino acids) or `external` (reads from FASTA file).
+- `--mode`: Either `random` (generates random amino acids) or `external` (reads
+  from FASTA file).
 - `--seed`: The integer seed used for the MCMC simulation randomness.
 - `--fasta`: (Only required if `--mode external`) Path to the FASTA list.
 - `--accepted`: Stop target for the Markov Chain model (default is 2).
@@ -52,7 +76,8 @@ python main.py --mode external --seed 9 --fasta ../input/peptides_for_pred_9.txt
 
 ## 🏗️ Architecture & Flowchart
 
-The refactored code splits large complex monoliths into cleanly separated domains. Here is exactly how data flows across all functions.
+The refactored code splits large complex monoliths into cleanly separated
+domains. Here is exactly how data flows across all functions.
 
 ```mermaid
 flowchart TD
@@ -92,9 +117,15 @@ flowchart TD
 
 ### Module Breakdown:
 
-1. `main.py`: Purely dictates command line interfaces. Initiates the execution logic.
-2. `simulation.py`: Handles the high-level `while` loop that controls the MCMC (Markov Chain Monte Carlo) acceptance states.
-3. `pipeline.py`: A wrapper toolkit executing physical tasks. Includes generating peptides, executing the physical `netMHCpan` shell binaries, and checking the exact probability deltas.
-4. `analysis.py`: Contains strictly pandas DataFrame logic to extract statistics (such as `WB`, `SB`, `NB`) out of the raw text outputs from NetMHCpan.
-5. `parameters.py`: Small isolated utility storing the mathematical equations that constrain the probability.
+1. `main.py`: Purely dictates command line interfaces. Initiates the execution
+   logic.
+2. `simulation.py`: Handles the high-level `while` loop that controls the MCMC
+   (Markov Chain Monte Carlo) acceptance states.
+3. `pipeline.py`: A wrapper toolkit executing physical tasks. Includes
+   generating peptides, executing the physical `netMHCpan` shell binaries, and
+   checking the exact probability deltas.
+4. `analysis.py`: Contains strictly pandas DataFrame logic to extract statistics
+   (such as `WB`, `SB`, `NB`) out of the raw text outputs from NetMHCpan.
+5. `parameters.py`: Small isolated utility storing the mathematical equations
+   that constrain the probability.
 6. `config.py`: Acts as the bridge between your system's `.env` and Python.
