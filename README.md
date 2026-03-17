@@ -2,6 +2,9 @@
 
 This is a modular, type-safe, and configurable algorithm. It eliminates hardcoded variables in the source code, introduces a Pythonic project structure, and safely handles NetMHCpan predictions under the hood.
 
+> [!NOTE]
+> **Project Structure Note:** The current repository focuses on the simulation logic, known mathematically as "MCMC" (Markov chain Monte Carlo). This entire self-contained logic resides within the `mcmc/` directory. You have the option to run this MCMC simulation part completely independently. The next phase of the project (the "filtering" part) is currently Work-In-Progress (WIP) and will be added later.
+
 ## 🛠️ Environment Configuration
 
 ### 1. Setup Virtual Environment
@@ -44,20 +47,20 @@ MHC_DIR_PATH=/path/to/netMHCpan-4.2/
 # SUPERTYPES_LIST=HLA-A*01:01,HLA-A*02:01...
 ```
 
-## 🚀 How to Run
+## 🚀 How to Run the MCMC Simulation
 
-We are using a robust CLI (Command Line Interface).
+We are using a robust CLI (Command Line Interface). Because the MCMC part is structured neatly in its own directory, you execute it by pointing Python to the inner `main.py`.
 
 **Run a Random Peptide Simulation:**
 
 ```bash
-python main.py --mode random --seed 9 --accepted 2
+python mcmc/main.py --mode random --seed 9 --accepted 2
 ```
 
 **Run an External FASTA Peptide List Simulation:**
 
 ```bash
-python main.py --mode external --seed 9 --fasta input/peptides_for_pred_9.txt --accepted 2
+python mcmc/main.py --mode external --seed 9 --fasta mcmc/input/peptides_for_pred_9.txt --accepted 2
 ```
 
 ### CLI Arguments Breakdown
@@ -113,15 +116,17 @@ flowchart TD
 
 ### Module Breakdown:
 
-1. `main.py`: Purely dictates command line interfaces. Initiates the execution
+All core modules currently reside under the `mcmc/` directory:
+
+1. `mcmc/main.py`: Purely dictates command line interfaces. Initiates the execution
    logic.
-2. `simulation.py`: Handles the high-level `while` loop that controls the MCMC
+2. `mcmc/simulation.py`: Handles the high-level `while` loop that controls the MCMC
    (Markov Chain Monte Carlo) acceptance states.
-3. `pipeline.py`: A wrapper toolkit executing physical tasks. Includes
+3. `mcmc/pipeline.py`: A wrapper toolkit executing physical tasks. Includes
    generating peptides, executing the physical `netMHCpan` shell binaries, and
    checking the exact probability deltas.
-4. `analysis.py`: Contains strictly pandas DataFrame logic to extract statistics
+4. `mcmc/analysis.py`: Contains strictly pandas DataFrame logic to extract statistics
    (such as `WB`, `SB`, `NB`) out of the raw text outputs from NetMHCpan.
-5. `parameters.py`: Small isolated utility storing the mathematical equations
+5. `mcmc/parameters.py`: Small isolated utility storing the mathematical equations
    that constrain the probability.
-6. `config.py`: Acts as the bridge between your system's `.env` and Python.
+6. `mcmc/config.py`: Acts as the bridge between your system's `.env` and Python.

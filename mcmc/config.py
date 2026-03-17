@@ -11,8 +11,8 @@ def load_env(env_path):
                     key, val = line.split('=', 1)
                     os.environ[key.strip()] = val.strip()
 
-# Base directory is the current directory for super-HLA
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Base directory is the the parent directory (project root)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_env(os.path.join(BASE_DIR, ".env"))
 
 # Configurable paths with sensible defaults
@@ -22,8 +22,9 @@ NETMHCPAN_EXECUTABLE = os.path.join(MHC_DIR_PATH, "netMHCpan")
 # Sometimes the executable is called ./netMHCpan or just netMHCpan if it's in the PATH
 # We will verify if we need to call it securely. Actually, we'll just use the absolute path.
 
-INPUT_DIR_PATH = os.environ.get("INPUT_DIR_PATH", os.path.join(BASE_DIR, "input"))
-OUTPUT_DIR_PATH = os.environ.get("OUTPUT_DIR_PATH", os.path.join(BASE_DIR, "output"))
+MCMC_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_DIR_PATH = os.environ.get("INPUT_DIR_PATH", os.path.join(MCMC_DIR, "input"))
+OUTPUT_DIR_PATH = os.environ.get("OUTPUT_DIR_PATH", os.path.join(MCMC_DIR, "output"))
 
 # Make sure directories exist
 os.makedirs(INPUT_DIR_PATH, exist_ok=True)

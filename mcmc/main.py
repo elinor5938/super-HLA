@@ -12,6 +12,7 @@ def main_random_peptide(seed: int, accepted_count: int, output_dir: str):
     out_path = os.path.join(output_dir, f"{seed}.csv")
     df_name.to_csv(out_path, index=False)
     print(f"Results successfully saved to: {out_path}")
+    print("\033[92mWe finished the MCMC simulation part - you can go with the output to the filtering part!\033[0m")
     return df_name
 
 def main_external_peptide_list(seed: int, fasta_path: str, accepted_count: int, output_dir: str):
@@ -35,6 +36,8 @@ def main_external_peptide_list(seed: int, fasta_path: str, accepted_count: int, 
         out_path = os.path.join(output_dir, f"{i}_{seed}_{peptide}.csv")
         df_name.to_csv(out_path, index=False)
         print(f"Saved: {out_path}")
+        
+    print("\033[92mWe finished the MCMC simulation part - you can go with the output to the filtering part!\033[0m")
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Filtering Algorithm Simulation Workflow")
