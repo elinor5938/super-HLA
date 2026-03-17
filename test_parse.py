@@ -1,7 +1,13 @@
 import subprocess
-import pandas as pd
-from io import StringIO
-command = "/Users/aviadchmelnik/Documents/Elinor/thesis/netMHCpan-4.2/netMHCpan -p /Users/aviadchmelnik/Code/Thesis-project/input/peptides_for_pred_9.txt -l 9 -a HLA-A01:01,HLA-A02:01,HLA-A03:01,HLA-A24:02,HLA-A29:02,HLA-B07:02,HLA-B08:01,HLA-B27:05,HLA-A30:01,HLA-B40:01,HLA-B58:01,HLA-B15:01"
+import os
+from config import NETMHCPAN_EXECUTABLE, INPUT_DIR_PATH, HLA_STR
+
+# Construct command using environment-aware variables from config.py
+peptides_file = os.path.join(INPUT_DIR_PATH, "peptides_for_pred_9.txt")
+command = f"{NETMHCPAN_EXECUTABLE} -p {peptides_file} -l 9 -a {HLA_STR}"
+
+print(f"Executing command: {command}")
+
 out = subprocess.run(command, shell=True, text=True, capture_output=True)
 stdout_string = out.stdout
 
@@ -9,4 +15,5 @@ stdout_string = out.stdout
 lines = [l for l in stdout_string.splitlines() if not l.startswith('#')]
 for i, l in enumerate(lines[:10]):
     print(f"{i}: {l}")
+
 
