@@ -4,14 +4,14 @@ This acts as a modular, type-safe, and configurable alternative to the original 
 
 ## 🛠️ Environment Configuration
 
-Before running any script, you must configure your `.env` file at the root of the project (`Thesis-project/.env`). The pipeline reads this file automatically.
+Before running any script, you must configure your `.env` file at the root of the project. The pipeline reads this file automatically.
 
 ### Required Environment Variables
 
 ```env
 # Path to your NetMHCpan directory. Crucial for executions.
 # The pipeline automatically handles both 4.1 and 4.2 output formats based on this path!
-MHC_DIR_PATH=/Users/aviadchmelnik/Documents/Elinor/thesis/netMHCpan-4.2/
+MHC_DIR_PATH=/path/to/netMHCpan-4.2/
 
 # Optional Overrides (They have defaults)
 # INPUT_DIR_PATH=/path/to/input/directory
@@ -26,7 +26,7 @@ Instead of manually editing and uncommenting lines of python code, the new pipel
 
 1. Change directory to the refactored pipeline:
    ```bash
-   cd /Users/aviadchmelnik/Code/Thesis-project/refactored-pipeline
+   cd /path/to/your/project/refactored-pipeline
    ```
 2. Make sure you activate your python virtual environment.
 
