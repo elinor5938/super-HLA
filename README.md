@@ -1,9 +1,6 @@
-# Refactored Filtering Algorithm Pipeline
+# Super-HLA Analysis Pipeline
 
-This acts as a modular, type-safe, and configurable alternative to the original
-thesis pipeline. It eliminates hardcoded variables in the source code,
-introduces a Pythonic project structure, and safely handles NetMHCpan
-predictions under the hood.
+This is a modular, type-safe, and configurable algorithm. It eliminates hardcoded variables in the source code, introduces a Pythonic project structure, and safely handles NetMHCpan predictions under the hood.
 
 ## 🛠️ Environment Configuration
 
@@ -76,8 +73,7 @@ python main.py --mode external --seed 9 --fasta input/peptides_for_pred_9.txt --
 
 ## 🏗️ Architecture & Flowchart
 
-The refactored code splits large complex monoliths into cleanly separated
-domains. Here is exactly how data flows across all functions.
+The architecture splits large complex monoliths into cleanly separated domains. Here is exactly how data flows across all functions.
 
 ```mermaid
 flowchart TD

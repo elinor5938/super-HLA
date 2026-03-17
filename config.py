@@ -11,12 +11,12 @@ def load_env(env_path):
                     key, val = line.split('=', 1)
                     os.environ[key.strip()] = val.strip()
 
-# Base directory is one level up from this script (Thesis-project)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Base directory is the current directory for super-HLA
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_env(os.path.join(BASE_DIR, ".env"))
 
 # Configurable paths with sensible defaults
-DEFAULT_MHC_PATH = "/Users/aviadchmelnik/Documents/Elinor/thesis/netMHCpan-4.1/"
+DEFAULT_MHC_PATH = "/path/to/netMHCpan-4.2/"
 MHC_DIR_PATH = os.environ.get("MHC_DIR_PATH", DEFAULT_MHC_PATH)
 NETMHCPAN_EXECUTABLE = os.path.join(MHC_DIR_PATH, "netMHCpan")
 # Sometimes the executable is called ./netMHCpan or just netMHCpan if it's in the PATH
