@@ -25,16 +25,16 @@ flowchart LR
 
     subgraph Filtering Stage
         direction TB
-        F0[Stage 0: Load simulation data\n+ HLA combination map]
-        F1[Stage 1: CD-HIT clustering\n2 rounds at 60% similarity]
-        F2[Stage 2: Synthesis filter\nRemove difficult-to-make peptides]
-        F3[Stage 3: MHC cross-validation\nnetMHCpan 4.0 · 4.1 · MHCflurry]
+        F0["Stage 0: Load simulation data<br/>and HLA combination map"]
+        F1["Stage 1: CD-HIT clustering<br/>2 rounds at 60 pct similarity"]
+        F2["Stage 2: Synthesis filter<br/>Remove difficult-to-make peptides"]
+        F3["Stage 3: MHC cross-validation<br/>netMHCpan 4.0, 4.1, MHCflurry"]
         F0 --> F1 --> F2 --> F3
     end
 
     CSV[(Simulation CSVs)] -- feeds --> F0
-    MCMC Stage -- produces --> CSV
-    F3 --> Result([Super-binder\nCandidate Peptides])
+    MCMC --> CSV
+    F3 --> Result(["Super-binder<br/>Candidate Peptides"])
 ```
 
 The MCMC stage stochastically explores peptide space, accepting mutations that improve broad HLA binding.  After many independent simulation runs, the filtering stage consolidates all accepted peptides into a final ranked candidate list.

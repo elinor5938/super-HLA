@@ -47,19 +47,19 @@ flowchart TD
         direction TB
         Init[pipeline.py : firs_pep_init] --> Mutate
         
-        Mutate[pipeline.py : mutation_creator <br> Generates a new random amino acid]
+        Mutate["pipeline.py : mutation_creator<br/>Generates a new random amino acid"]
         Mutate --> Predict
         
-        Predict[pipeline.py : send_pep_to_prediction <br> Runs NetMHCpan via Subprocess]
+        Predict["pipeline.py : send_pep_to_prediction<br/>Runs NetMHCpan via Subprocess"]
         Predict -.-> Analysis
         
-        Analysis[analysis.py : create_df_from_netmhcpan_output <br> Builds tracking Pandas features]
+        Analysis["analysis.py : create_df_from_netmhcpan_output<br/>Builds tracking Pandas features"]
         Analysis --> CheckDelta
         
-        Params([parameters.py : get_probability_function <br> Retrieves equation constraint]) -.-> CheckDelta
+        Params(["parameters.py : get_probability_function<br/>Retrieves equation constraint"]) -.-> CheckDelta
         
-        CheckDelta[pipeline.py : check_delta <br> Evaluates transition probabilty]
-        CheckDelta --> Cond{Have we hit <br> accepted count limit?}
+        CheckDelta["pipeline.py : check_delta<br/>Evaluates transition probability"]
+        CheckDelta --> Cond{"Have we hit<br/>accepted count limit?"}
         
         Cond -->|No| Mutate
     end

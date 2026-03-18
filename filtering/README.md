@@ -15,42 +15,42 @@ The filtering pipeline takes ~10 000s of peptides produced by the MCMC simulatio
 flowchart TD
     A([Input: MCMC Simulation CSVs]) --> S0
 
-    subgraph Stage 0 — Load Data
-        S0[Load robust_df\nLoad df_dict\nLoad all_hla_combinations]
-        S0 --> S0b[get_peptides_by_hla_threshold\nmin 8 HLA supertypes]
+    subgraph Stage 0 - Load Data
+        S0["Load robust_df<br/>Load df_dict<br/>Load all_hla_combinations"]
+        S0 --> S0b["get_peptides_by_hla_threshold<br/>min 8 HLA supertypes"]
     end
 
-    S0b -->|~471 HLA combos\neach with peptide lists| S1
+    S0b -->|"~471 HLA combos<br/>each with peptide lists"| S1
 
-    subgraph Stage 1 — CD-HIT Clustering
-        S1[Round 1: cluster per HLA combination\nat 60% similarity]
-        S1 -->|select_cluster_consensus\nper cluster| S1b
-        S1b[Flatten all consensus\npeptides ~55k]
-        S1b --> S1c[Round 2: global re-cluster\nat 60% similarity]
-        S1c -->|select_cluster_consensus| S1d[Final representative set\n~8 400 peptides]
+    subgraph Stage 1 - CD-HIT Clustering
+        S1["Round 1: cluster per HLA combination<br/>at 60 pct similarity"]
+        S1 -->|"select_cluster_consensus<br/>per cluster"| S1b
+        S1b["Flatten all consensus<br/>peptides ~55k"]
+        S1b --> S1c["Round 2: global re-cluster<br/>at 60 pct similarity"]
+        S1c -->|select_cluster_consensus| S1d["Final representative set<br/>~8400 peptides"]
     end
 
     S1d --> S2
 
-    subgraph Stage 2 — Synthesis Filter
-        S2{Apply rule-based filters\nQ N-terminus · MM · HH · DG · DD · GG\nM+C+H · C+H · C+M · 3x M/H · triple repeats}
-        S2 -->|Removed: ~1 800| Trash1[🗑 Discarded]
-        S2 -->|Kept| S2b[Synthesis-feasible peptides\n~6 600]
+    subgraph Stage 2 - Synthesis Filter
+        S2{"Apply rule-based filters<br/>Q N-terminus, MM, HH, DG, DD, GG<br/>M+C+H, C+H, C+M, 3x M/H, triple repeats"}
+        S2 -->|"Removed: ~1800"| Trash1[Discarded]
+        S2 -->|Kept| S2b["Synthesis-feasible peptides<br/>~6600"]
     end
 
     S2b --> S3
     S2b -->|write_to_fasta| FASTA[(result_no_triple.fasta)]
 
-    subgraph Stage 3 — MHC Cross-Validation
+    subgraph Stage 3 - MHC Cross-Validation
         S3[Run 3 predictors on FASTA]
         S3 --> P1[netMHCpan 4.1]
         S3 --> P2[netMHCpan 4.0]
         S3 --> P3[MHCflurry]
-        P1 & P2 & P3 --> Score[Compute one_side_mean\nper predictor]
-        Score --> Top[Select top 3 000\nper predictor]
+        P1 & P2 & P3 --> Score["Compute one_side_mean<br/>per predictor"]
+        Score --> Top["Select top 3000<br/>per predictor"]
     end
 
-    Top --> Out([Output: top_net41 · top_net40 · top_flurry])
+    Top --> Out(["Output: top_net41, top_net40, top_flurry"])
 ```
 
 ---
