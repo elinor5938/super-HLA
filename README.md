@@ -1,132 +1,154 @@
 # Super-HLA Analysis Pipeline
 
-This is a modular, type-safe, and configurable algorithm. It eliminates hardcoded variables in the source code, introduces a Pythonic project structure, and safely handles NetMHCpan predictions under the hood.
+Super-HLA is a modular computational pipeline for discovering **super-binder peptides** — peptides that bind strongly to a broad set of MHC class I HLA supertypes. The pipeline is split into two independently runnable stages:
 
-> [!NOTE]
-> **Project Structure Note:** The current repository focuses on the simulation logic, known mathematically as "MCMC" (Markov chain Monte Carlo). This entire self-contained logic resides within the `mcmc/` directory. You have the option to run this MCMC simulation part completely independently. The next phase of the project (the "filtering" part) is currently Work-In-Progress (WIP) and will be added later.
+| Stage | Directory | Status |
+|-------|-----------|--------|
+| 1. MCMC Simulation | [`mcmc/`](mcmc/) | ✅ Available |
+| 2. Filtering | [`filtering/`](filtering/) | ✅ Available |
 
-## 🛠️ Environment Configuration
+Each stage has its own `README.md` with detailed run instructions and flowcharts. This document covers the one-time setup and the big-picture architecture.
 
-### 1. Setup Virtual Environment
+---
 
-For this project we will need specific packages that require Python 3.10+. You will need to have a `.venv` folder. If you don't have one, run:
+## 🏗️ Big-Picture Architecture
 
-**On macOS:**
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
+```mermaid
+flowchart LR
+    subgraph MCMC Stage
+        direction TB
+        M1[Generate / mutate peptide]
+        M2[Run NetMHCpan prediction]
+        M3[Evaluate MCMC probability]
+        M1 --> M2 --> M3 --> M1
+    end
+
+    subgraph Filtering Stage
+        direction TB
+        F0[Stage 0: Load simulation data\n+ HLA combination map]
+        F1[Stage 1: CD-HIT clustering\n2 rounds at 60% similarity]
+        F2[Stage 2: Synthesis filter\nRemove difficult-to-make peptides]
+        F3[Stage 3: MHC cross-validation\nnetMHCpan 4.0 · 4.1 · MHCflurry]
+        F0 --> F1 --> F2 --> F3
+    end
+
+    CSV[(Simulation CSVs)] -- feeds --> F0
+    MCMC Stage -- produces --> CSV
+    F3 --> Result([Super-binder\nCandidate Peptides])
 ```
 
-**On Windows:**
-You will need to use WSL for netMHCpan to work. The setup is quite hard - you will need to open a VSCode project from the WSL user. Please make sure you do it before continuing. Use the macOS installation for the virtual environment. From now on - you can use only `.\.venv\Scripts\Activate.bat`.
+The MCMC stage stochastically explores peptide space, accepting mutations that improve broad HLA binding.  After many independent simulation runs, the filtering stage consolidates all accepted peptides into a final ranked candidate list.
 
-Make sure you validate that your IDE debugger/interpreter is also set to this specific `.venv`.
+---
 
-Install the required packages:
+## 🛠️ One-Time Setup
+
+### 1. Python Environment
+
+This project requires **Python 3.10+**.
+
 ```bash
+# Create a virtual environment
+python3.10 -m venv .venv
+source .venv/bin/activate        # macOS / Linux
+# .\.venv\Scripts\Activate.bat  # Windows (WSL required for netMHCpan)
+
+pip install -U pip
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
+> [!NOTE]
+> Make sure your IDE debugger/interpreter is also pointed to this `.venv`.
 
-Before running any script, you must configure your `.env` file at the root of
-the project. The pipeline reads this file automatically.
+### 2. Configure `.env`
 
-#### Required Environment Variables
+Create or edit the `.env` file at the project root.  The file ships with commented-out templates for all variables.
+
+**Minimum required for MCMC:**
 
 ```env
-# Path to your NetMHCpan directory. Crucial for executions.
-# The pipeline automatically handles both 4.1 and 4.2 output formats based on this path!
+# Path to your netMHCpan directory (4.1 or 4.2 supported)
 MHC_DIR_PATH=/path/to/netMHCpan-4.2/
-
-# Optional Overrides (They have defaults)
-# INPUT_DIR_PATH=/path/to/input/directory
-# OUTPUT_DIR_PATH=/path/to/output/directory
-# HLA_STR=HLA-A01:01,HLA-A02:01...
-# SUPERTYPES_LIST=HLA-A*01:01,HLA-A*02:01...
 ```
 
-## 🚀 How to Run the MCMC Simulation
+**Additional variables required for Filtering:**
 
-We are using a robust CLI (Command Line Interface). Because the MCMC part is structured neatly in its own directory, you execute it by pointing Python to the inner `main.py`.
+```env
+ROBUST_DF_CSV_PATH=/path/to/all_data_frames_sims_october.csv
+SIMULATION_CSV_DIR=/path/to/semi-strict-october-40000/
+HLA_COMBINATIONS_PICKLE=/path/to/all_hla_cominations.pickle
+MEMOIZATION_DIR=/path/to/memoization/
+CDHIT_CLUSTER1_INPUT_DIR=/path/to/cd-hit-files/cluster1/
+CDHIT_CLUSTER1_OUTPUT_DIR=/path/to/cd-hit-files/cluster1/output/
+CDHIT_CLUSTER2_INPUT_DIR=/path/to/cd-hit-files/cluster2/
+CDHIT_CLUSTER2_OUTPUT_DIR=/path/to/cd-hit-files/cluster2/output/
+STAGE2_OUTPUT_DIR=/path/to/stage2-files/
+```
 
-**Run a Random Peptide Simulation:**
+### 3. External Tools
+
+| Tool | Required by | How to install |
+|------|-------------|----------------|
+| `netMHCpan 4.1` or `4.2` | MCMC + Filtering | [DTU Health Tech](https://services.healthtech.dtu.dk/) |
+| `netMHCpan 4.0` | Filtering stage 3 only | Same DTU page (optional) |
+| `cd-hit` | Filtering stage 1 | `brew install cd-hit` |
+| `mhcflurry` | Filtering stage 3 | `pip install mhcflurry && mhcflurry-downloads fetch` |
+
+> [!IMPORTANT]
+> On **Windows**, netMHCpan requires WSL.  Open the project in VSCode from inside WSL and use the macOS-style setup above.
+
+---
+
+## 🚀 Running the Pipeline
+
+### Run MCMC only
 
 ```bash
 python mcmc/main.py --mode random --seed 9 --accepted 2
 ```
 
-**Run an External FASTA Peptide List Simulation:**
+See [`mcmc/README.md`](mcmc/README.md) for the full CLI reference.
+
+### Run Filtering only
 
 ```bash
-python mcmc/main.py --mode external --seed 9 --fasta mcmc/input/peptides_for_pred_9.txt --accepted 2
+python filtering/main.py
 ```
 
-### CLI Arguments Breakdown
-
-- `--mode`: Either `random` (generates random amino acids) or `external` (reads
-  from FASTA file).
-- `--seed`: The integer seed used for the MCMC simulation randomness.
-- `--fasta`: (Only required if `--mode external`) Path to the FASTA list.
-- `--accepted`: Stop target for the Markov Chain model (default is 2).
-- `--output`: Choose a custom directory to dump the resulting `.csv`.
+See [`filtering/README.md`](filtering/README.md) for the filtering flowchart and env var reference.
 
 ---
 
-## 🏗️ Architecture & Flowchart
+## 📁 Project Structure
 
-The architecture splits large complex monoliths into cleanly separated domains. Here is exactly how data flows across all functions.
-
-```mermaid
-flowchart TD
-    %% Main Entry
-    Main([main.py]) --> ParseArgs[CLI Argument Parsing]
-    
-    %% Initialization
-    ParseArgs -->|mode=random| SimProc[[simulation.py : simulation_process]]
-    ParseArgs -->|mode=external| SimProc
-    
-    subgraph Core Simulation Loop
-        direction TB
-        Init[pipeline.py : firs_pep_init] --> Mutate
-        
-        Mutate[pipeline.py : mutation_creator <br> Generates a new random amino acid]
-        Mutate --> Predict
-        
-        Predict[pipeline.py : send_pep_to_prediction <br> Runs NetMHCpan via Subprocess]
-        Predict -.-> Analysis
-        
-        Analysis[analysis.py : create_df_from_netmhcpan_output <br> Builds tracking Pandas features]
-        Analysis --> CheckDelta
-        
-        Params([parameters.py : get_probability_function <br> Retrieves equation constraint]) -.-> CheckDelta
-        
-        CheckDelta[pipeline.py : check_delta <br> Evaluates transition probabilty]
-        CheckDelta --> Cond{Have we hit <br> accepted count limit?}
-        
-        Cond -->|No| Mutate
-    end
-    
-    SimProc --> Init
-    
-    %% Output
-    Cond -->|Yes| Save((Save to CSV))
 ```
-
-### Module Breakdown:
-
-All core modules currently reside under the `mcmc/` directory:
-
-1. `mcmc/main.py`: Purely dictates command line interfaces. Initiates the execution
-   logic.
-2. `mcmc/simulation.py`: Handles the high-level `while` loop that controls the MCMC
-   (Markov Chain Monte Carlo) acceptance states.
-3. `mcmc/pipeline.py`: A wrapper toolkit executing physical tasks. Includes
-   generating peptides, executing the physical `netMHCpan` shell binaries, and
-   checking the exact probability deltas.
-4. `mcmc/analysis.py`: Contains strictly pandas DataFrame logic to extract statistics
-   (such as `WB`, `SB`, `NB`) out of the raw text outputs from NetMHCpan.
-5. `mcmc/parameters.py`: Small isolated utility storing the mathematical equations
-   that constrain the probability.
-6. `mcmc/config.py`: Acts as the bridge between your system's `.env` and Python.
+super-HLA/
+├── .env                   ← All environment variable configuration
+├── requirements.txt
+├── README.md              ← You are here (setup + big picture)
+│
+├── mcmc/
+│   ├── README.md          ← MCMC-specific docs and flowchart
+│   ├── main.py
+│   ├── simulation.py
+│   ├── pipeline.py
+│   ├── analysis.py
+│   ├── parameters.py
+│   └── config.py
+│
+└── filtering/
+    ├── README.md          ← Filtering-specific docs and flowchart
+    ├── main.py
+    ├── config.py
+    ├── constants.py
+    ├── stage0_load_data.py
+    ├── stage1_cdhit_clustering.py
+    ├── stage2_filter_synthesis.py
+    ├── stage3_validate_mhc_predictions.py
+    └── utils/
+        ├── fasta.py
+        ├── memoize.py
+        ├── clustering.py
+        ├── scoring.py
+        └── prediction.py
+```
