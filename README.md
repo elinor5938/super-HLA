@@ -54,6 +54,7 @@ source .venv/bin/activate        # macOS / Linux
 # .\.venv\Scripts\Activate.bat  # Windows (WSL required for netMHCpan)
 
 pip install -U pip
+brew install cd-hit
 pip install -r requirements.txt
 ```
 
