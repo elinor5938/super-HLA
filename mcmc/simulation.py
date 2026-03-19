@@ -55,7 +55,8 @@ def simulation_process(seed: int, external_peptide_str=None, number_of_accepted_
                 last_true_val = first_pep_df.head(1)[OPTIMIZATION_COLUMN].values[0]
 
         # Break out when we reach target accepted count
-        if (appended_data["probabilty_res_MCMC"] == True).sum() >= number_of_accepted_peptides:
+        accepted_count = (appended_data["probabilty_res_MCMC"] == True).sum()  # noqa: E712
+        if accepted_count >= number_of_accepted_peptides:
             break
             
     return appended_data

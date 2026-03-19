@@ -68,7 +68,7 @@ def create_dict_of_df(directory: str) -> dict:
         if not filename.endswith(".csv"):
             continue
 
-        df_key = filename.rstrip(".csv")
+        df_key = filename.removesuffix(".csv")
         df = pd.read_csv(os.path.join(directory, filename), low_memory=False)
 
         # Keep only MCMC-accepted rows
@@ -232,7 +232,7 @@ def select_cluster_consensus(cluster_df: pd.DataFrame, scores_df: pd.DataFrame) 
         suffixes=("_cluster", "_y"),
     )
     merged.drop_duplicates(subset="Peptide", keep="first", inplace=True)
-    merged["cluster_size"] = merged["cluster_size"].replace(["Singleton"], 1)
+    merged.loc[merged["cluster_size"] == "Singleton", "cluster_size"] = 1
     merged["pos_4"] = [pep[3] for pep in merged["Peptide"]]
     merged["consensus_SB"] = None
 
@@ -251,6 +251,9 @@ def select_cluster_consensus(cluster_df: pd.DataFrame, scores_df: pd.DataFrame) 
         merged.at[best_idx, "consensus_SB"] = "consensus"
 
     # Sanity check: one consensus per cluster
+    if merged.empty:
+        return merged
+
     n_clusters = merged["cluster_n"].max()
     n_consensus = merged[merged["consensus_SB"] == "consensus"].shape[0]
     if n_clusters != n_consensus:

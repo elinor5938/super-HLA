@@ -46,7 +46,6 @@ def _run_cdhit(
     combination_id: str,
     input_fasta_dir: str,
     output_dir: str,
-    should_generate_fasta: bool = True,
 ):
     """Runs CD-HIT on a set of peptides and returns the parsed cluster DataFrame.
 
@@ -56,8 +55,6 @@ def _run_cdhit(
         combination_id: A unique label used to name the input/output files.
         input_fasta_dir: Directory for writing input FASTA files.
         output_dir: Directory for CD-HIT output files.
-        should_generate_fasta: If ``True``, writes a fresh FASTA before clustering.
-            Set to ``False`` to re-use existing FASTA files (e.g. on re-runs).
 
     Returns:
         A cluster DataFrame as returned by
@@ -68,8 +65,7 @@ def _run_cdhit(
     input_fasta = os.path.join(input_fasta_dir, f"{base_name}.fasta")
     output_base = os.path.join(output_dir, f"{base_name}.fasta.myout")
 
-    if should_generate_fasta:
-        write_to_fasta(os.path.join(input_fasta_dir, base_name), peptide_sequences)
+    write_to_fasta(os.path.join(input_fasta_dir, base_name), peptide_sequences)
 
     # -c: similarity threshold (0–1)  -g 1: global alignment  -M: memory (MB)
     # -n 3: word length for short peptides  -l 2: ignore seqs shorter than 3 AA
@@ -103,6 +99,9 @@ def _cluster_all_combinations_round1(stage0_data: dict) -> list:
 
     all_consensus: list = []
 
+    os.makedirs(CDHIT_CLUSTER1_INPUT_DIR, exist_ok=True)
+    os.makedirs(CDHIT_CLUSTER1_OUTPUT_DIR, exist_ok=True)
+
     for combination_id, peptides in threshold_peptides.items():
         cluster_df = _run_cdhit(
             peptide_sequences=peptides,
@@ -110,7 +109,6 @@ def _cluster_all_combinations_round1(stage0_data: dict) -> list:
             combination_id=combination_id,
             input_fasta_dir=CDHIT_CLUSTER1_INPUT_DIR,
             output_dir=CDHIT_CLUSTER1_OUTPUT_DIR,
-            should_generate_fasta=False,  # Use pre-existing FASTA files
         )
         consensus_df = select_cluster_consensus(cluster_df, robust_df)
         consensus_peptides = consensus_df[consensus_df["consensus_SB"] == "consensus"]["index"].tolist()
@@ -156,6 +154,17 @@ def run_stage1(stage0_data: dict) -> dict:
     flat_peptide_list = [pep for sublist in all_consensus_round1 for pep in sublist]
     print(f"[Stage 1] Round 1 flat consensus peptide count (expected ~55 066): {len(flat_peptide_list)}")
 
+    if not flat_peptide_list:
+        import pandas as pd
+        print("[Stage 1] No peptides to cluster in round 2 — skipping.")
+        return {
+            "consensus_peptides": [],
+            "consensus_df_round2": pd.DataFrame(),
+        }
+
+    os.makedirs(CDHIT_CLUSTER2_INPUT_DIR, exist_ok=True)
+    os.makedirs(CDHIT_CLUSTER2_OUTPUT_DIR, exist_ok=True)
+
     # Round 2 — global re-clustering of all round-1 consensus peptides
     cluster_df_round2 = memoize_function(
         lambda: _run_cdhit(
@@ -164,7 +173,6 @@ def run_stage1(stage0_data: dict) -> dict:
             combination_id="second_round_on_consensus",
             input_fasta_dir=CDHIT_CLUSTER2_INPUT_DIR,
             output_dir=CDHIT_CLUSTER2_OUTPUT_DIR,
-            should_generate_fasta=False,
         ),
         os.path.join(memo_dir, "cluster_df_round2.pickle"),
     )

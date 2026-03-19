@@ -1,16 +1,15 @@
 import numpy as np
 import pandas as pd
-import math
 from config import SUPERTYPES_LIST
 
 def create_df_from_netmhcpan_output(df: pd.DataFrame, supertypes_list: list = SUPERTYPES_LIST) -> pd.DataFrame:
     """Get netMHCpan output as a df and process it."""
     mutant_df = df[df["MHC"].isin(supertypes_list)]
-    
+
     # Pivot so rows are Peptides and columns are MHC types
     data_hla_as_col = mutant_df.pivot(columns="MHC", values="%Rank_EL", index="Peptide")
     data_hla_as_col = data_hla_as_col.astype(float)
-    
+
     # Count Weak Binders (WB), Strong Binders (SB), and Non-Binders (NB)
     data_hla_as_col["WB"] = data_hla_as_col[(0.5 < data_hla_as_col.loc[:, supertypes_list]) & (data_hla_as_col.loc[:, supertypes_list] <= 2)].count(axis=1)
     data_hla_as_col["SB"] = data_hla_as_col[data_hla_as_col.loc[:, supertypes_list] <= 0.5].count(axis=1)

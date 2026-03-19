@@ -1,6 +1,14 @@
 import os
 import argparse
 import sys
+
+# Ensure project root is on sys.path so both `python mcmc/main.py` and
+# `python -m mcmc.main` work correctly.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MCMC_DIR = os.path.dirname(os.path.abspath(__file__))
+if _MCMC_DIR not in sys.path:
+    sys.path.insert(0, _MCMC_DIR)
+
 from simulation import simulation_process
 from config import OUTPUT_DIR_PATH
 

@@ -1,15 +1,14 @@
-# Filtering Pipeline — Super-HLA
+# Filtering Pipeline -- Super-HLA
 
 This module implements the **four-stage peptide filtering pipeline** that takes raw MCMC simulation output and progressively narrows it down to a high-confidence set of super-binder candidates.
 
-> [!NOTE]
-> **Prerequisite:** The MCMC stage must have been run first and produced simulation output CSVs. Configure all filtering `.env` variables before running.
+> **Prerequisite:** The MCMC stage must have been run first and `prepare_filtering_data.py` must have been run to set up the filtering inputs. See the main [README.md](../README.md) for the full workflow.
 
 ---
 
-## 🔄 Pipeline Overview
+## Pipeline Overview
 
-The filtering pipeline takes ~10 000s of peptides produced by the MCMC simulation and reduces them to a few thousand high-confidence HLA super-binders through four sequential stages:
+The filtering pipeline takes peptides produced by the MCMC simulation and reduces them to a few thousand high-confidence HLA super-binders through four sequential stages:
 
 ```mermaid
 flowchart TD
@@ -20,86 +19,86 @@ flowchart TD
         S0 --> S0b["get_peptides_by_hla_threshold<br/>min 8 HLA supertypes"]
     end
 
-    S0b -->|"~471 HLA combos<br/>each with peptide lists"| S1
+    S0b -->|"HLA combos<br/>each with peptide lists"| S1
 
     subgraph Stage 1 - CD-HIT Clustering
         S1["Round 1: cluster per HLA combination<br/>at 60 pct similarity"]
         S1 -->|"select_cluster_consensus<br/>per cluster"| S1b
-        S1b["Flatten all consensus<br/>peptides ~55k"]
+        S1b["Flatten all consensus<br/>peptides"]
         S1b --> S1c["Round 2: global re-cluster<br/>at 60 pct similarity"]
-        S1c -->|select_cluster_consensus| S1d["Final representative set<br/>~8400 peptides"]
+        S1c -->|select_cluster_consensus| S1d["Final representative set"]
     end
 
     S1d --> S2
 
     subgraph Stage 2 - Synthesis Filter
         S2{"Apply rule-based filters<br/>Q N-terminus, MM, HH, DG, DD, GG<br/>M+C+H, C+H, C+M, 3x M/H, triple repeats"}
-        S2 -->|"Removed: ~1800"| Trash1[Discarded]
-        S2 -->|Kept| S2b["Synthesis-feasible peptides<br/>~6600"]
+        S2 -->|Removed| Trash1[Discarded]
+        S2 -->|Kept| S2b["Synthesis-feasible peptides"]
     end
 
     S2b --> S3
     S2b -->|write_to_fasta| FASTA[(result_no_triple.fasta)]
 
     subgraph Stage 3 - MHC Cross-Validation
-        S3[Run 3 predictors on FASTA]
-        S3 --> P1[netMHCpan 4.1]
-        S3 --> P2[netMHCpan 4.0]
-        S3 --> P3[MHCflurry]
+        S3[Run available predictors on FASTA]
+        S3 --> P1["netMHCpan (primary, required)"]
+        S3 -.-> P2["netMHCpan 4.0 (optional)"]
+        S3 -.-> P3["MHCflurry (optional)"]
         P1 & P2 & P3 --> Score["Compute one_side_mean<br/>per predictor"]
         Score --> Top["Select top 3000<br/>per predictor"]
     end
 
-    Top --> Out(["Output: top_net41, top_net40, top_flurry"])
+    Top --> Out(["Output: top peptides per predictor"])
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-All paths are configured via the root `.env` file. Copy the commented-out variables from `.env` and fill in your actual paths:
+All paths are configured via the root `.env` file. Most paths are set automatically by `prepare_filtering_data.py`.
 
 | Variable | Description |
 |----------|-------------|
-| `ROBUST_DF_CSV_PATH` | Path to `all_data_frames_sims_october.csv` |
+| `ROBUST_DF_CSV_PATH` | Path to combined MCMC results CSV |
 | `SIMULATION_CSV_DIR` | Directory of per-seed MCMC simulation CSVs |
-| `HLA_COMBINATIONS_PICKLE` | Path to `all_hla_cominations.pickle` |
+| `HLA_COMBINATIONS_PICKLE` | Path to HLA combination mapping pickle |
 | `MEMOIZATION_DIR` | Root directory for all pickle caches |
 | `CDHIT_CLUSTER1_INPUT_DIR` | FASTA input dir for cluster round 1 |
 | `CDHIT_CLUSTER1_OUTPUT_DIR` | CD-HIT output dir for cluster round 1 |
 | `CDHIT_CLUSTER2_INPUT_DIR` | FASTA input dir for cluster round 2 |
 | `CDHIT_CLUSTER2_OUTPUT_DIR` | CD-HIT output dir for cluster round 2 |
 | `STAGE2_OUTPUT_DIR` | Directory for stage 2 FASTA output |
-| `NETMHCPAN_40_DIR_PATH` | Path to netMHCpan 4.0 binary directory |
+| `NETMHCPAN_40_DIR_PATH` | Path to netMHCpan 4.0 (optional, for cross-validation) |
 
 ---
 
-## 🚀 How to Run
+## How to Run
 
 ```bash
-python filtering/main.py
+python -m filtering.main
 ```
 
-The pipeline will print progress and counts after each stage. Memoized results are loaded from the `MEMOIZATION_DIR` automatically — re-runs only recompute what's missing.
+The pipeline will print progress and counts after each stage. Memoized results are loaded from `MEMOIZATION_DIR` automatically -- re-runs only recompute what's missing. Delete the memoization directory to force a full re-run.
 
 ### Expected Progress (original dataset)
 
 | Stage | Output Count |
 |-------|-------------|
-| Stage 0 — Threshold peptides | ~471 HLA combinations |
-| Stage 1 Round 1 — Flat consensus | ~55 066 peptides |
-| Stage 1 Round 2 — Representatives | ~8 435 rows |
-| Stage 2 — Synthesis-feasible | ~6 599 peptides |
-| Stage 3 — Top 3000 per predictor | 3 000 × 3 lists |
+| Stage 0 -- Threshold peptides | ~471 HLA combinations |
+| Stage 1 Round 1 -- Flat consensus | ~55,066 peptides |
+| Stage 1 Round 2 -- Representatives | ~8,435 rows |
+| Stage 2 -- Synthesis-feasible | ~6,599 peptides |
+| Stage 3 -- Top 3000 per predictor | 3,000 x N predictors |
 
 ---
 
-## 📁 Module Breakdown
+## Module Breakdown
 
 ```
 filtering/
 ├── main.py                       # Orchestration entry point
-├── config.py                     # .env loader → Python constants
+├── config.py                     # .env loader -> Python constants
 ├── constants.py                  # Shared scientific constants (HLA list, thresholds)
 ├── stage0_load_data.py           # Load MCMC output and HLA combination map
 ├── stage1_cdhit_clustering.py    # Two-round CD-HIT sequence clustering
@@ -115,17 +114,13 @@ filtering/
 
 ---
 
-## 🔧 External Tool Requirements
+## External Tool Requirements
 
 | Tool | Used in | Install |
 |------|---------|---------|
 | `cd-hit` | Stage 1 | `brew install cd-hit` (macOS) |
-| `netMHCpan 4.1` | Stage 3 | [DTU download page](https://services.healthtech.dtu.dk/) |
-| `netMHCpan 4.0` | Stage 3 | Same DTU page (optional, for cross-validation) |
-| `mhcflurry` | Stage 3 | `pip install mhcflurry && mhcflurry-downloads fetch` |
+| `netMHCpan 4.1 or 4.2` | Stage 3 (primary) | [DTU download page](https://services.healthtech.dtu.dk/) |
+| `netMHCpan 4.0` | Stage 3 (optional) | Same DTU page |
+| `mhcflurry` | Stage 3 (optional) | `pip install mhcflurry && mhcflurry-downloads fetch` |
 
----
-
-## 🗒️ Known TODOs
-
-- **Stage 3 — Cross-predictor intersection**: The original analysis selected peptides that ranked in the top N across *all three* predictors simultaneously. This logic was incomplete in the legacy code and is marked as a `TODO` in `stage3_validate_mhc_predictions.py`.
+Stage 3 requires the primary netMHCpan installation (configured via `MHC_DIR_PATH`). netMHCpan 4.0 and MHCflurry are optional -- if not configured or installed, those predictors are automatically skipped with a warning.

@@ -84,6 +84,10 @@ def run_stage2(consensus_peptides: list) -> dict:
     Side effects:
         Writes ``result_no_triple.fasta`` to ``STAGE2_OUTPUT_DIR``.
     """
+    if not consensus_peptides:
+        print("[Stage 2] No peptides to filter.")
+        return {"filtered_peptides": [], "filter_stats": {}}
+
     # Tally removal reasons
     stats = {
         "Q_n_terminus": 0,

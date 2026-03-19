@@ -1,8 +1,8 @@
 """
 filtering/main.py — Orchestration entry point for the filtering pipeline.
 
-Usage:
-    python filtering/main.py
+Usage (from the project root):
+    python -m filtering.main
 
 This script runs all four filtering stages sequentially:
   Stage 0 - Load data (MCMC simulation results + HLA combination map)
@@ -16,11 +16,19 @@ are memoized to disk — re-running skips expensive steps that are already done.
 Prerequisites:
   1. Both MCMC and filtering .env variables must be configured (see README.md).
   2. cd-hit must be installed and on your PATH.
-  3. netMHCpan 4.1 (and optionally 4.0) must be installed.
-  4. Python package mhcflurry must be installed and its models downloaded.
+  3. netMHCpan 4.1 or 4.2 must be installed.
+  4. (Optional) netMHCpan 4.0 for cross-validation.
+  5. (Optional) Python package mhcflurry for cross-validation.
 """
+import os
 import sys
 import time
+
+# Ensure the project root is on sys.path so both `python -m filtering.main`
+# and `python filtering/main.py` resolve the `filtering` package correctly.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from filtering.stage0_load_data import run_stage0
 from filtering.stage1_cdhit_clustering import run_stage1
@@ -60,24 +68,28 @@ def main():
           f"{len(stage2_data['filtered_peptides'])}")
 
     # ── Stage 3 ──────────────────────────────────────────────────────────────
-    print("\n[Stage 3] Running MHC binding cross-validation (3 predictors)...")
-    t3 = time.time()
-    stage3_data = run_stage3(stage2_data["filtered_peptides"])
-    print(f"[Stage 3] Done. ({time.time() - t3:.1f}s)")
+    if not stage2_data["filtered_peptides"]:
+        print("\n[Stage 3] No peptides to validate — skipping.")
+        stage3_data = {"scores_df": None, "top_primary": [], "top_net40": [], "top_flurry": []}
+    else:
+        print("\n[Stage 3] Running MHC binding cross-validation...")
+        t3 = time.time()
+        stage3_data = run_stage3(stage2_data["filtered_peptides"])
+        print(f"[Stage 3] Done. ({time.time() - t3:.1f}s)")
 
     # ── Summary ──────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  Pipeline Complete")
     print(f"  Total runtime: {time.time() - total_start:.1f}s")
     print("=" * 60)
-    print(f"  Input peptides (≥8 HLA binders):  {len(stage0_data['threshold_8_hla_passing_peptides'])}")
-    print(f"  After CD-HIT clustering:           {len(stage1_data['consensus_peptides'])}")
-    print(f"  After synthesis filter:            {len(stage2_data['filtered_peptides'])}")
-    print(f"  Top 3000 by netMHCpan 4.1:        {len(stage3_data['top_net41'])}")
-    print(f"  Top 3000 by netMHCpan 4.0:        {len(stage3_data['top_net40'])}")
-    print(f"  Top 3000 by MHCflurry:            {len(stage3_data['top_flurry'])}")
+    print(f"  Input peptides (>=8 HLA binders): {len(stage0_data['threshold_8_hla_passing_peptides'])}")
+    print(f"  After CD-HIT clustering:          {len(stage1_data['consensus_peptides'])}")
+    print(f"  After synthesis filter:           {len(stage2_data['filtered_peptides'])}")
+    print(f"  Top by primary netMHCpan:         {len(stage3_data['top_primary'])}")
+    print(f"  Top by netMHCpan 4.0:             {len(stage3_data['top_net40'])}")
+    print(f"  Top by MHCflurry:                 {len(stage3_data['top_flurry'])}")
     print("=" * 60)
-    print("\n✅ Filtering pipeline finished. Results are ready for downstream analysis.")
+    print("\nFiltering pipeline finished. Results are ready for downstream analysis.")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,40 @@
 import os
 import random
+import re
 import subprocess
-from io import StringIO
+
 import numpy as np
 import pandas as pd
 
 from config import INPUT_DIR_PATH, HLA_STR, NETMHCPAN_EXECUTABLE
 from analysis import create_df_from_netmhcpan_output
+
+
+def _parse_netmhcpan_stdout(stdout_string: str) -> pd.DataFrame:
+    """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
+
+    Handles both 4.1 and 4.2+ output formats. Correctly handles the `<= SB`
+    and `<= WB` binding level markers that break naive whitespace-based parsing.
+    """
+    rows = []
+    for line in stdout_string.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("-") or stripped.startswith("Protein") or stripped.startswith("Pos"):
+            continue
+        # Remove binding level markers that break \s+ parsing
+        cleaned = re.sub(r'\s*<=\s*(SB|WB)\s*$', '', stripped)
+        tokens = cleaned.split()
+        if len(tokens) >= 13:
+            mhc = tokens[1]
+            peptide = tokens[2]
+            rank = tokens[12]  # %Rank or %Rank_EL is always at position 12
+            rows.append({"MHC": mhc, "Peptide": peptide, "%Rank_EL": float(rank)})
+
+    if not rows:
+        raise RuntimeError("Failed to parse any data rows from netMHCpan output")
+
+    return pd.DataFrame(rows)
+
 
 # Base amino acids list used across the pipeline
 AMINO_ACID_LIST = ["A", "R", "N", "D", "C", "E", "Q", "G", "H", "I", "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V"]
@@ -32,30 +60,7 @@ def send_pep_to_prediction(peptide: str, seed: int) -> pd.DataFrame:
     if "no binaries found" in stdout_string or len(stdout_string.splitlines()) < 3:
         raise RuntimeError(f"netMHCpan execution failed or returned invalid output. Check your local installation for architecture compatibility.\nOutput was:\n{stdout_string.strip()}")
 
-    # Check which version we are parsing
-    version_is_41 = False
-    if "netMHCpan-4.1" in NETMHCPAN_EXECUTABLE:
-        version_is_41 = True
-    
-    # Robust parsing of netMHCpan text output
-    parsed_lines = []
-    
-    if version_is_41:
-        # Original 4.1 format parsing logic
-        df = pd.read_csv(StringIO(stdout_string), sep=r'\s+', comment="#", header=2, usecols=[1, 2, 12])
-    else:
-        # New 4.2+ format parsing logic
-        for line in stdout_string.splitlines():
-            l = line.strip()
-            if not l or l.startswith("#") or l.startswith("-") or l.startswith("Protein"):
-                continue
-            if l.startswith("Pos") and len(parsed_lines) > 0:
-                continue  # Skip repeated headers
-            parsed_lines.append(l)
-            
-        output_string = StringIO("\n".join(parsed_lines))
-        df = pd.read_csv(output_string, sep=r'\s+', header=0, usecols=["MHC", "Peptide", "%Rank"])
-        df.rename(columns={"%Rank": "%Rank_EL"}, inplace=True)
+    df = _parse_netmhcpan_stdout(stdout_string)
     
     full_df = create_df_from_netmhcpan_output(df)
     return full_df

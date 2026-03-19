@@ -12,11 +12,10 @@ pred_analysis.py.
 
 All tool paths are resolved from filtering/config.py — no hardcoded paths.
 """
-import math
+import re
 import subprocess
 from io import StringIO
 
-import numpy as np
 import pandas as pd
 
 from filtering.config import MHC_DIR_PATH, NETMHCPAN_40_DIR_PATH, MEMOIZATION_DIR
@@ -89,14 +88,15 @@ def create_df_from_netmhcpan_output(
 
 
 # ---------------------------------------------------------------------------
-# netMHCpan 4.1 — batch FASTA prediction
+# netMHCpan (primary installation) — batch FASTA prediction
 # ---------------------------------------------------------------------------
 
 def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
-    """Runs netMHCpan 4.1 on a FASTA file and returns a binding score DataFrame.
+    """Runs the primary netMHCpan installation on a FASTA file and returns binding scores.
 
-    Results are cached in the stage-3 memoization subdirectory so that the
-    expensive subprocess call is skipped on re-runs.
+    Uses whichever netMHCpan version is configured via MHC_DIR_PATH (supports
+    4.1 and 4.2+ output formats). Results are cached in the stage-3 memoization
+    subdirectory so that the expensive subprocess call is skipped on re-runs.
 
     Args:
         peptides_fasta_path: Absolute path to the input FASTA file.
@@ -109,7 +109,7 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
     netmhcpan_exec = os.path.join(MHC_DIR_PATH, "netMHCpan")
     command = f"{netmhcpan_exec} -f {peptides_fasta_path} -l 9 -a {HLA_STR}"
 
-    cache_path = os.path.join(MEMOIZATION_DIR, "stage-3", "netMHCpan_4.1-prediction.pickle")
+    cache_path = os.path.join(MEMOIZATION_DIR, "stage-3", "netMHCpan-primary-prediction.pickle")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
 
     out_object = memoize_function(
@@ -117,13 +117,38 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
         cache_path,
     )
 
-    output_string = StringIO(out_object.stdout)
-    df = pd.read_csv(output_string, sep=r"\s+", comment="#", header=2, usecols=[1, 2, 12])
-    return _pivot_netmhcpan_41(df)
+    df = _parse_netmhcpan_output(out_object.stdout)
+    return _pivot_netmhcpan(df)
 
 
-def _pivot_netmhcpan_41(df: pd.DataFrame) -> pd.DataFrame:
-    """Pivots a raw netMHCpan 4.1 output DataFrame to peptide × HLA format."""
+def _parse_netmhcpan_output(stdout: str) -> pd.DataFrame:
+    """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
+
+    Supports 4.0, 4.1, and 4.2+ output formats. Correctly handles the ``<= SB``
+    and ``<= WB`` binding level markers that break naive whitespace-based parsing.
+    """
+    rows = []
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("-") or stripped.startswith("Protein") or stripped.startswith("Pos"):
+            continue
+        # Remove binding level markers that break \s+ parsing
+        cleaned = re.sub(r'\s*<=\s*(SB|WB)\s*$', '', stripped)
+        tokens = cleaned.split()
+        if len(tokens) >= 13:
+            mhc = tokens[1]
+            peptide = tokens[2]
+            rank = tokens[12]  # %Rank or %Rank_EL is always at position 12
+            rows.append({"MHC": mhc, "Peptide": peptide, "%Rank_EL": float(rank)})
+
+    if not rows:
+        raise RuntimeError("Failed to parse any data rows from netMHCpan output")
+
+    return pd.DataFrame(rows)
+
+
+def _pivot_netmhcpan(df: pd.DataFrame) -> pd.DataFrame:
+    """Pivots a raw netMHCpan output DataFrame to peptide x HLA format."""
     supertypes = pd.Index(SUPERTYPE_LIST)
     df = df[df["MHC"].isin(supertypes)]
     df = df.pivot(columns="MHC", values="%Rank_EL", index="Peptide")
@@ -136,23 +161,45 @@ def _pivot_netmhcpan_41(df: pd.DataFrame) -> pd.DataFrame:
 # netMHCpan 4.0 — batch FASTA prediction
 # ---------------------------------------------------------------------------
 
-def send_to_prediction_as_is_net_4(peptides_fasta_path: str) -> pd.DataFrame:
-    """Runs netMHCpan 4.0 on a FASTA file and returns a binding score DataFrame.
+def _resolve_netmhcpan_executable(install_dir: str) -> str:
+    """Finds the correct netMHCpan executable for the current platform.
 
-    netMHCpan 4.0 uses a different output column name (``%Rank`` instead of
-    ``%Rank_EL``) and a different HLA notation — both are handled here.
+    On arm64 Macs, older netMHCpan versions (4.0, 4.1) only ship x86_64
+    binaries.  If a ``netMHCpan_darwin_arm64`` wrapper exists (which runs the
+    binary through Rosetta), it is preferred.  Otherwise falls back to the
+    standard ``netMHCpan`` tcsh wrapper.
+    """
+    arm64_wrapper = os.path.join(install_dir, "netMHCpan_darwin_arm64")
+    if os.path.isfile(arm64_wrapper) and os.access(arm64_wrapper, os.X_OK):
+        return arm64_wrapper
+    return os.path.join(install_dir, "netMHCpan")
+
+
+def send_to_prediction_as_is_net_4(peptides_fasta_path: str) -> pd.DataFrame:
+    """Runs a secondary netMHCpan installation on a FASTA file for cross-validation.
+
+    Uses whichever netMHCpan version is at ``NETMHCPAN_40_DIR_PATH`` (supports
+    4.0, 4.1, and 4.2 output formats).
 
     Args:
         peptides_fasta_path: Absolute path to the input FASTA file.
 
     Returns:
         A pivoted DataFrame with one row per peptide and one column per HLA
-        supertype containing ``%Rank`` scores.
+        supertype containing binding rank scores.
+
+    Raises:
+        FileNotFoundError: If ``NETMHCPAN_40_DIR_PATH`` is not configured.
     """
-    netmhcpan_exec = os.path.join(NETMHCPAN_40_DIR_PATH, "netMHCpan")
+    if not NETMHCPAN_40_DIR_PATH:
+        raise FileNotFoundError(
+            "Secondary netMHCpan path not configured. Set NETMHCPAN_40_DIR_PATH in .env."
+        )
+
+    netmhcpan_exec = _resolve_netmhcpan_executable(NETMHCPAN_40_DIR_PATH)
     command = f"{netmhcpan_exec} -f {peptides_fasta_path} -l 9 -a {HLA_STR}"
 
-    cache_path = os.path.join(MEMOIZATION_DIR, "stage-3", "netMHCpan_4.0-prediction.pickle")
+    cache_path = os.path.join(MEMOIZATION_DIR, "stage-3", "netMHCpan-secondary-prediction.pickle")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
 
     out_object = memoize_function(
@@ -160,14 +207,8 @@ def send_to_prediction_as_is_net_4(peptides_fasta_path: str) -> pd.DataFrame:
         cache_path,
     )
 
-    output_string = StringIO(out_object.stdout)
-    df = pd.read_csv(output_string, sep=r"\s+", comment="#", header=2, usecols=[1, 2, 12])
-
-    supertypes = SUPERTYPE_LIST
-    df = df[df["HLA"].isin(supertypes)]
-    df.set_index("Peptide", inplace=True)
-    df = df.pivot(columns="HLA", values="%Rank")
-    return df
+    df = _parse_netmhcpan_output(out_object.stdout)
+    return _pivot_netmhcpan(df)
 
 
 # ---------------------------------------------------------------------------
