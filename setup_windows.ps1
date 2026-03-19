@@ -298,7 +298,7 @@ function Setup-NetMHCpanWsl {
     # Check for Linux binaries
     $linuxBin = Join-Path $Dir "Linux_x86_64\bin\netMHCpan"
     if (-not (Test-Path $linuxBin)) {
-        Write-Warn "$Label: Linux binaries not found at Linux_x86_64\bin\"
+        Write-Warn "$Label`: Linux binaries not found at Linux_x86_64\bin"
         Write-Info "Download the Linux tarball from DTU and extract into: $Dir"
         Add-Failure "$Label Linux binaries"
         return
@@ -351,62 +351,9 @@ function Setup-NetMHCpanWsl {
 
         $wslNetMHCpanDir = ConvertTo-WslPath $Dir
 
-        # Use single-quoted here-string to avoid PowerShell variable expansion
-        # then replace the placeholder with the actual WSL path
-        $wrapperContent = @'
-@echo off
-REM WSL wrapper for netMHCpan
-REM Translates Windows paths to WSL paths and runs inside WSL
-
-setlocal EnableDelayedExpansion
-
-set NMHOME=__WSL_DIR__
-set ARGS=
-
-:parse_args
-if "%~1"=="" goto run
-if "%~1"=="-f" (
-    shift
-    set "FASTA_WIN=%~f1"
-    set "FASTA_WIN=!FASTA_WIN:\=/!"
-    for /f "tokens=1 delims=:" %%d in ("!FASTA_WIN!") do (
-        set "DRIVE=%%d"
-        call :lowercase DRIVE
-    )
-    set "FASTA_WSL=/mnt/!DRIVE!!FASTA_WIN:~2!"
-    set "ARGS=!ARGS! -f !FASTA_WSL!"
-    shift
-    goto parse_args
-)
-if "%~1"=="-p" (
-    shift
-    set "PEP_WIN=%~f1"
-    set "PEP_WIN=!PEP_WIN:\=/!"
-    for /f "tokens=1 delims=:" %%d in ("!PEP_WIN!") do (
-        set "DRIVE=%%d"
-        call :lowercase DRIVE
-    )
-    set "PEP_WSL=/mnt/!DRIVE!!PEP_WIN:~2!"
-    set "ARGS=!ARGS! -p !PEP_WSL!"
-    shift
-    goto parse_args
-)
-set "ARGS=!ARGS! %~1"
-shift
-goto parse_args
-
-:run
-set "NETMHCpan=%NMHOME%/Linux_x86_64"
-wsl bash -c "export NMHOME=%NMHOME% && export TMPDIR=/tmp && %NETMHCpan%/bin/netMHCpan !ARGS!"
-goto :eof
-
-:lowercase
-for %%a in (a b c d e f g h i j k l m n o p q r s t u v w x y z) do (
-    set "%~1=!%~1:%%a=%%a!"
-)
-goto :eof
-'@
-        $wrapperContent = $wrapperContent.Replace('__WSL_DIR__', $wslNetMHCpanDir)
+        # Copy batch wrapper template and inject the WSL path
+        $templatePath = Join-Path $ProjectRoot "netMHCpan_wsl_template.bat"
+        $wrapperContent = (Get-Content $templatePath -Raw).Replace('__WSL_DIR__', $wslNetMHCpanDir)
         $wrapperContent | Out-File -FilePath $wrapperPath -Encoding ASCII
         Write-Ok "WSL wrapper created: $wrapperPath"
     }
