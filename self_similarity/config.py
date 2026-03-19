@@ -48,10 +48,10 @@ ALIGNMENT_RESULTS_JSON = os.environ.get(
     os.path.join(PROJECT_ROOT, "data", "needle", "alignment_results.json"),
 )
 
-# Input FASTA of candidate peptides (output of filtering pipeline).
+# Input FASTA of candidate peptides (output of stage 3 filtering pipeline).
 CANDIDATE_PEPTIDES_FASTA = os.environ.get(
     "CANDIDATE_PEPTIDES_FASTA",
-    os.path.join(PROJECT_ROOT, "data", "candidate_peptides.fasta"),
+    os.path.join(PROJECT_ROOT, "data", "stage2-files", "candidate_peptides.fasta"),
 )
 
 # Self-similarity thresholds (out of 9 for 9-mer peptides)
