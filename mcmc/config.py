@@ -20,12 +20,19 @@ DEFAULT_MHC_PATH = "/path/to/netMHCpan-4.1/"
 MHC_DIR_PATH = os.environ.get("MHC_DIR_PATH", DEFAULT_MHC_PATH)
 
 # Auto-detect the best executable for the current platform.
-# On arm64 Macs, older netMHCpan versions need platform-specific wrappers.
+# Wrappers are checked in order: Docker > platform-specific > default.
 def _resolve_executable(install_dir):
+    import sys as _sys
     for wrapper in ("netMHCpan_docker", "netMHCpan_darwin_arm64"):
         path = os.path.join(install_dir, wrapper)
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
+    # On Windows, check for .bat wrapper or WSL script
+    if _sys.platform == "win32":
+        for wrapper in ("netMHCpan_wsl.bat", "netMHCpan_docker.bat"):
+            path = os.path.join(install_dir, wrapper)
+            if os.path.isfile(path):
+                return path
     return os.path.join(install_dir, "netMHCpan")
 
 NETMHCPAN_EXECUTABLE = _resolve_executable(MHC_DIR_PATH)

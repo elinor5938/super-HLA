@@ -10,13 +10,14 @@ The needle command:
            -gapopen 100 -gapextend 10 -endweight Y -endopen 100 -endextend 10
            -error N -warning N -sprotein -stdout Y -filter Y -verbose Y
 
-Output is piped through grep to keep only hits with identity >= 6/9,
-extracting identity, similarity, score, and matched sequence ID lines.
+Output is filtered in Python (no grep dependency) to keep only hits with
+identity >= 6/9, extracting identity, similarity, score, and sequence ID lines.
 """
 import os
 import re
 import shutil
 import subprocess
+import sys
 from multiprocessing import Pool
 from typing import Dict, List, Optional
 
@@ -30,11 +31,78 @@ from self_similarity.config import (
 def _find_needle() -> str:
     """Return the path to the needle executable, or raise."""
     path = shutil.which("needle")
-    if not path:
+    if path:
+        return path
+    # On Windows, try WSL
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ["wsl", "which", "needle"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return "wsl needle"  # Will be used as prefix
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
         raise FileNotFoundError(
-            "EMBOSS needle not found on PATH. Install: brew install emboss"
+            "EMBOSS needle not found. Install WSL and run: sudo apt install emboss"
         )
-    return path
+    raise FileNotFoundError(
+        "EMBOSS needle not found on PATH. Install: brew install emboss"
+    )
+
+
+def _filter_needle_output(raw_stdout: str) -> str:
+    """Pure-Python replacement for grep filtering of needle output.
+
+    Keeps blocks around lines matching 'Identity: N/9' where N >= 6,
+    extracting Identity, Similarity, Score, and sequence ID (# 2:) lines.
+    """
+    lines = raw_stdout.splitlines()
+    result_lines = []
+
+    for i, line in enumerate(lines):
+        # Look for identity lines with high identity (6-9 out of 9)
+        if re.search(r'Identity:\s+[6-9]/9', line):
+            # Collect context: look backwards for # 2: line, and forward for similarity/score
+            block = []
+            # Search backwards up to 6 lines for the sequence ID
+            for j in range(max(0, i - 6), i):
+                if '# 2:' in lines[j]:
+                    block.append(lines[j].strip())
+            # The identity line itself
+            block.append(line.strip())
+            # Look forward for similarity and score (up to 3 lines)
+            for j in range(i + 1, min(len(lines), i + 4)):
+                if re.search(r'Similarity:|Score:', lines[j]):
+                    block.append(lines[j].strip())
+            result_lines.extend(block)
+
+    return "\n".join(result_lines)
+
+
+def _build_needle_cmd(needle_bin: str, peptide: str, chunk_path: str) -> list:
+    """Build the needle command as a list (cross-platform)."""
+    args = [
+        "-asequence", f"asis:{peptide}",
+        "-bsequence", chunk_path,
+        "-gapopen", "100", "-gapextend", "10",
+        "-endweight", "Y", "-endopen", "100", "-endextend", "10",
+        "-error", "N", "-warning", "N",
+        "-sprotein", "-stdout", "Y", "-filter", "Y", "-verbose", "Y",
+    ]
+
+    if needle_bin.startswith("wsl "):
+        # Running through WSL on Windows — convert path
+        wsl_chunk = chunk_path.replace("\\", "/")
+        # Convert Windows drive paths to WSL: C:\foo -> /mnt/c/foo
+        if len(wsl_chunk) >= 2 and wsl_chunk[1] == ":":
+            drive = wsl_chunk[0].lower()
+            wsl_chunk = f"/mnt/{drive}{wsl_chunk[2:]}"
+        args[3] = wsl_chunk  # -bsequence
+        return ["wsl", "needle"] + args
+    else:
+        return [needle_bin] + args
 
 
 def _run_needle_one_peptide_one_chunk(
@@ -42,23 +110,17 @@ def _run_needle_one_peptide_one_chunk(
 ) -> str:
     """Run needle for a single peptide against a single chunk FASTA.
 
-    Returns the filtered stdout text (or empty string on failure).
+    Returns the filtered output text (or empty string on failure).
+    Uses pure-Python filtering instead of grep for cross-platform compatibility.
     """
-    cmd = (
-        f"{needle_bin} -asequence asis:{peptide} -bsequence {chunk_path} "
-        f"-gapopen 100 -gapextend 10 -endweight Y -endopen 100 -endextend 10 "
-        f"-error N -warning N -sprotein -stdout Y -filter Y -verbose Y"
-    )
-    # Pipe through grep for high-identity hits (identity digit >= 6 out of 9)
-    full_cmd = (
-        f"{cmd} | grep -E -B 6 -A 3 'Identity:\\s+[6-9]' "
-        f"| grep -E 'Identity:|2:|Score:|Similarity'"
-    )
+    cmd = _build_needle_cmd(needle_bin, peptide, chunk_path)
     try:
         result = subprocess.run(
-            full_cmd, shell=True, capture_output=True, text=True, timeout=7200,
+            cmd, capture_output=True, text=True, timeout=7200,
         )
-        return result.stdout
+        if result.returncode != 0:
+            return ""
+        return _filter_needle_output(result.stdout)
     except subprocess.TimeoutExpired:
         return ""
 
@@ -94,7 +156,7 @@ def run_needle_alignments(
     """Run needle alignments for all candidate peptides.
 
     Args:
-        peptides: Mapping of peptide name → sequence (e.g. {"seq0": "ALFPHIMTY"}).
+        peptides: Mapping of peptide name -> sequence (e.g. {"seq0": "ALFPHIMTY"}).
         chunks_dir: Directory containing chunked reference FASTA files.
         output_dir: Where to write per-peptide needle output text files.
         workers: Number of parallel processes (defaults to config).
@@ -118,7 +180,7 @@ def run_needle_alignments(
     if not chunk_paths:
         raise FileNotFoundError(f"No .fasta chunk files found in {chunks_dir}")
 
-    print(f"  Needle: {len(peptides)} peptides × {len(chunk_paths)} chunks, "
+    print(f"  Needle: {len(peptides)} peptides x {len(chunk_paths)} chunks, "
           f"{workers} workers")
 
     # Skip peptides that already have output files (resume support)
@@ -132,7 +194,7 @@ def run_needle_alignments(
         tasks.append((pep_name, pep_seq, chunk_paths, needle_bin))
 
     if not tasks:
-        print("  All needle results already exist — skipping.")
+        print("  All needle results already exist -- skipping.")
         return output_paths
 
     print(f"  Running needle for {len(tasks)} peptides ({len(peptides) - len(tasks)} cached)...")

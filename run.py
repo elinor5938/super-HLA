@@ -31,6 +31,12 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 MCMC_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "mcmc", "output")
 STATE_FILE = os.path.join(DATA_DIR, ".pipeline_state.json")
 
+# Cross-platform venv Python path
+if sys.platform == "win32":
+    VENV_PYTHON = os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
+else:
+    VENV_PYTHON = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+
 # ---------------------------------------------------------------------------
 # .env loader
 # ---------------------------------------------------------------------------
@@ -362,8 +368,7 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
     try:
         # We need to be in the mcmc directory context
         mcmc_main = os.path.join(PROJECT_ROOT, "mcmc", "main.py")
-        venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
-        interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
+        interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         t_start = time.time()
 
@@ -407,8 +412,7 @@ def run_stage_2():
         t_start = time.time()
 
         prep_script = os.path.join(PROJECT_ROOT, "prepare_filtering_data.py")
-        venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
-        interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
+        interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         result = subprocess.run(
             [interpreter, prep_script],
@@ -451,8 +455,7 @@ def run_stage_3():
     try:
         t_start = time.time()
 
-        venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
-        interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
+        interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         result = subprocess.run(
             [interpreter, "-m", "filtering.main"],
@@ -493,8 +496,7 @@ def run_stage_4():
     try:
         t_start = time.time()
 
-        venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
-        interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
+        interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         result = subprocess.run(
             [interpreter, "-m", "self_similarity.main"],

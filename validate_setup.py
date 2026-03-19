@@ -45,18 +45,25 @@ def _check_python_version():
     return False, f"Python {ver_str} (need 3.10+)"
 
 
+def _venv_python():
+    """Return the path to the venv Python interpreter (cross-platform)."""
+    if sys.platform == "win32":
+        return os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
+    return os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+
+
 def _check_venv():
-    venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+    venv_python = _venv_python()
     if os.path.isfile(venv_python):
         return True, f"Found at .venv/"
-    return False, "Virtual environment not found. Run: python3.10 -m venv .venv"
+    return False, "Virtual environment not found. Run: python -m venv .venv"
 
 
 def _check_pip_packages():
     missing = []
     # Package name -> import name (when they differ)
     required = ["pandas", "numpy", "Bio", "matplotlib", "seaborn"]
-    venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+    venv_python = _venv_python()
     interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
     for pkg in required:
         try:
@@ -83,7 +90,7 @@ def _check_env_var(var_name: str, must_exist_on_disk: bool = True, is_dir: bool 
     val = os.environ.get(var_name, "")
     if not val:
         return False, f"Not set in .env"
-    if val.startswith("/path/to"):
+    if val.startswith("/path/to") or val.startswith("C:\\path\\to"):
         return False, f"Still has placeholder value: {val}"
     if must_exist_on_disk:
         if is_dir and not os.path.isdir(val):
@@ -95,7 +102,7 @@ def _check_env_var(var_name: str, must_exist_on_disk: bool = True, is_dir: bool 
 
 def _check_netmhcpan_executable(install_dir: str, label: str):
     """Check that a netMHCpan installation has a working executable."""
-    if not install_dir or install_dir.startswith("/path/to"):
+    if not install_dir or install_dir.startswith("/path/to") or install_dir.startswith("C:\\path\\to"):
         return False, "Not configured"
     if not os.path.isdir(install_dir):
         return False, f"Directory not found: {install_dir}"
@@ -105,6 +112,13 @@ def _check_netmhcpan_executable(install_dir: str, label: str):
         path = os.path.join(install_dir, wrapper)
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return True, f"Using {wrapper} in {install_dir}"
+
+    # Windows wrappers (.bat files)
+    if sys.platform == "win32":
+        for wrapper in ("netMHCpan_wsl.bat", "netMHCpan_docker.bat"):
+            path = os.path.join(install_dir, wrapper)
+            if os.path.isfile(path):
+                return True, f"Using {wrapper} in {install_dir}"
 
     return False, f"No executable found in {install_dir}"
 
@@ -118,6 +132,18 @@ def _check_cdhit():
 def _check_needle():
     if shutil.which("needle"):
         return True, shutil.which("needle")
+    # On Windows, needle may be available through WSL
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ["wsl", "which", "needle"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return True, f"Available via WSL: {result.stdout.strip()}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return False, "Not found. Install WSL and run: sudo apt install emboss"
     return False, "Not found on PATH. Install: brew install emboss"
 
 
@@ -159,7 +185,7 @@ def _check_docker_image(image_name: str):
 
 
 def _check_mhcflurry():
-    venv_python = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+    venv_python = _venv_python()
     interpreter = venv_python if os.path.isfile(venv_python) else sys.executable
     try:
         subprocess.run(

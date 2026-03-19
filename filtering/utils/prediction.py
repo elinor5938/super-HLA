@@ -164,18 +164,25 @@ def _pivot_netmhcpan(df: pd.DataFrame) -> pd.DataFrame:
 def _resolve_netmhcpan_executable(install_dir: str) -> str:
     """Finds the correct netMHCpan executable for the current platform.
 
-    On arm64 Macs, older netMHCpan versions (4.0, 4.1) only ship x86_64 or
-    Linux binaries.  This function looks for platform-specific wrappers in
-    order of preference:
+    Looks for platform-specific wrappers in order of preference:
 
-      1. ``netMHCpan_docker``       — runs via Docker (for Linux-only builds)
-      2. ``netMHCpan_darwin_arm64`` — runs via Rosetta (for x86_64 Mac builds)
-      3. ``netMHCpan``             — native tcsh wrapper (default)
+      1. ``netMHCpan_docker``       — runs via Docker (macOS/Linux)
+      2. ``netMHCpan_darwin_arm64`` — runs via Rosetta (macOS arm64)
+      3. ``netMHCpan_wsl.bat``      — runs via WSL (Windows)
+      4. ``netMHCpan_docker.bat``   — runs via Docker (Windows)
+      5. ``netMHCpan``             — native tcsh wrapper (default)
     """
+    import sys as _sys
     for wrapper_name in ("netMHCpan_docker", "netMHCpan_darwin_arm64"):
         wrapper = os.path.join(install_dir, wrapper_name)
         if os.path.isfile(wrapper) and os.access(wrapper, os.X_OK):
             return wrapper
+    # Windows-specific wrappers
+    if _sys.platform == "win32":
+        for wrapper_name in ("netMHCpan_wsl.bat", "netMHCpan_docker.bat"):
+            wrapper = os.path.join(install_dir, wrapper_name)
+            if os.path.isfile(wrapper):
+                return wrapper
     return os.path.join(install_dir, "netMHCpan")
 
 

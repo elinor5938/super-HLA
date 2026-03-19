@@ -24,7 +24,9 @@ Output of run_stage1():
   - ``consensus_df_round2`` (DataFrame): Full cluster + score table for round 2.
 """
 import os
+import shutil
 import subprocess
+import sys
 
 from filtering.config import (
     CDHIT_CLUSTER1_INPUT_DIR,
@@ -67,14 +69,31 @@ def _run_cdhit(
 
     write_to_fasta(os.path.join(input_fasta_dir, base_name), peptide_sequences)
 
-    # -c: similarity threshold (0–1)  -g 1: global alignment  -M: memory (MB)
+    # -c: similarity threshold (0-1)  -g 1: global alignment  -M: memory (MB)
     # -n 3: word length for short peptides  -l 2: ignore seqs shorter than 3 AA
-    cd_hit_command = (
-        f"cd-hit -i {input_fasta} "
-        f"-o {output_base} "
-        f"-c 0.{similarity_threshold} -g 1 -M 10000 -n 3 -l 2"
-    )
-    subprocess.run(cd_hit_command, shell=True, text=True, check=True)
+    cd_hit_args = [
+        "-i", input_fasta,
+        "-o", output_base,
+        "-c", f"0.{similarity_threshold}",
+        "-g", "1", "-M", "10000", "-n", "3", "-l", "2",
+    ]
+
+    if shutil.which("cd-hit"):
+        subprocess.run(["cd-hit"] + cd_hit_args, text=True, check=True)
+    elif sys.platform == "win32":
+        # On Windows, run cd-hit through WSL with path conversion
+        wsl_input = input_fasta.replace("\\", "/")
+        wsl_output = output_base.replace("\\", "/")
+        if len(wsl_input) >= 2 and wsl_input[1] == ":":
+            drive = wsl_input[0].lower()
+            wsl_input = f"/mnt/{drive}{wsl_input[2:]}"
+        if len(wsl_output) >= 2 and wsl_output[1] == ":":
+            drive = wsl_output[0].lower()
+            wsl_output = f"/mnt/{drive}{wsl_output[2:]}"
+        wsl_args = ["-i", wsl_input, "-o", wsl_output] + cd_hit_args[4:]
+        subprocess.run(["wsl", "cd-hit"] + wsl_args, text=True, check=True)
+    else:
+        raise FileNotFoundError("cd-hit not found on PATH. Install: brew install cd-hit")
 
     cluster_df = parse_cdhit_clusters(f"{output_base}.clstr")
     cluster_df.reset_index(inplace=True)

@@ -71,28 +71,53 @@ if report["all_ok"]:
 
 ## One-Time Setup
 
-### 1. Python Environment
+### Automated Setup (Recommended)
+
+**macOS:**
+```bash
+chmod +x setup_mac.sh
+./setup_mac.sh
+```
+
+**Windows** (PowerShell):
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup_windows.ps1
+```
+
+Both scripts install all prerequisites, configure `.env`, and are idempotent (safe to re-run).
+
+### Manual Setup
+
+#### 1. Python Environment
 
 This project requires **Python 3.10+**.
 
+**macOS / Linux:**
 ```bash
 python3.10 -m venv .venv
 source .venv/bin/activate
-
-pip install -U pip
-pip install -r requirements.txt
+pip install -U pip && pip install -r requirements.txt
 ```
 
-### 2. External Tools
+**Windows:**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -U pip && pip install -r requirements.txt
+```
 
-| Tool | Required by | How to install |
-|------|-------------|----------------|
-| `netMHCpan 4.1` | MCMC + Filtering (primary) | [DTU Health Tech](https://services.healthtech.dtu.dk/) (requires registration) |
-| `netMHCpan 4.0` | Filtering stage 3 (cross-validation) | Same DTU page |
-| `cd-hit` | Filtering stage 1 | `brew install cd-hit` |
-| `mhcflurry` | Filtering stage 3 (cross-validation) | `pip install mhcflurry && mhcflurry-downloads fetch` |
-| `Docker` | macOS only, for netMHCpan 4.0 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
-| `needle` (EMBOSS) | Self-similarity analysis | `brew install emboss` |
+#### 2. External Tools
+
+| Tool | Required by | macOS | Windows (via WSL) |
+|------|-------------|-------|-------------------|
+| `netMHCpan 4.1` | MCMC + Filtering | [DTU Health Tech](https://services.healthtech.dtu.dk/) | Same (Linux binary runs in WSL) |
+| `netMHCpan 4.0` | Filtering stage 3 | Same DTU page | Same (Linux binary runs in WSL) |
+| `cd-hit` | Filtering stage 1 | `brew install cd-hit` | `wsl sudo apt install cd-hit` |
+| `mhcflurry` | Filtering stage 3 | `pip install mhcflurry && mhcflurry-downloads fetch` | Same |
+| `Docker` | macOS, for netMHCpan | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Not needed (WSL used instead) |
+| `needle` (EMBOSS) | Self-similarity | `brew install emboss` | `wsl sudo apt install emboss` |
+| `WSL` | Windows only | N/A | `wsl --install` (as Administrator) |
 
 ### macOS on Apple Silicon (arm64) -- Platform Notes
 
@@ -142,7 +167,18 @@ The pipeline auto-detects these wrappers -- if a `netMHCpan_docker` or `netMHCpa
 4. The `netMHCpan_docker` wrapper script is also included and will be auto-detected by the pipeline.
 5. Make sure Docker Desktop is running before executing the pipeline.
 
-### 3. Configure `.env`
+### Windows with WSL -- Platform Notes
+
+On Windows, netMHCpan and other Linux tools run through **WSL (Windows Subsystem for Linux)**. No Docker is required.
+
+1. Install WSL (as Administrator): `wsl --install`
+2. Install tools inside WSL: `wsl sudo apt install emboss cd-hit tcsh gawk`
+3. Download the **Linux** tarballs for netMHCpan 4.1 and 4.0 from DTU
+4. The setup script creates `netMHCpan_wsl.bat` wrappers that automatically convert Windows paths to WSL paths and run the Linux binaries through WSL
+
+The pipeline auto-detects the platform and uses the appropriate wrapper (Docker on macOS, WSL on Windows).
+
+#### 3. Configure `.env`
 
 Create or edit the `.env` file at the project root.
 
@@ -258,6 +294,8 @@ See [`self_similarity/README.md`](self_similarity/README.md) for full details.
 super-HLA/
 ├── .env                        <- All environment variable configuration
 ├── run.py                      <- Pipeline orchestrator (interactive + CLI)
+├── setup_mac.sh                <- macOS automated setup (Homebrew + Docker)
+├── setup_windows.ps1           <- Windows automated setup (WSL-based)
 ├── requirements.txt
 ├── validate_setup.py           <- Pre-flight check for all prerequisites
 ├── prepare_filtering_data.py   <- Bridges MCMC output to filtering input
