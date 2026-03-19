@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time as _time
 from multiprocessing import Pool
 from typing import Dict, List, Optional
 
@@ -128,16 +129,33 @@ def _run_needle_one_peptide_one_chunk(
 def _run_needle_one_task(args: tuple) -> dict:
     """Worker function for multiprocessing Pool.
 
-    Args is a tuple of (peptide_name, peptide_seq, chunk_path, needle_bin).
+    Args is a tuple of (peptide_name, peptide_seq, chunk_path, needle_bin, logs_dir).
     Returns a dict with the peptide name, chunk, and the filtered output.
     """
-    pep_name, pep_seq, chunk_path, needle_bin = args
-    out = _run_needle_one_peptide_one_chunk(pep_seq, chunk_path, needle_bin)
+    pep_name, pep_seq, chunk_path, needle_bin, logs_dir = args
     chunk_label = os.path.basename(chunk_path)
+    pid = os.getpid()
+    log_path = os.path.join(logs_dir, f"worker_{pid}.log") if logs_dir else None
+
+    def _log(msg):
+        if log_path:
+            with open(log_path, "a") as lf:
+                lf.write(f"[{_time.strftime('%H:%M:%S')}] {msg}\n")
+                lf.flush()
+
+    _log(f"START {pep_name} ({pep_seq}) vs {chunk_label}")
+    t0 = _time.time()
+    out = _run_needle_one_peptide_one_chunk(pep_seq, chunk_path, needle_bin)
+    dt = _time.time() - t0
+    hits = out.strip().count("Identity:") if out.strip() else 0
+    _log(f"DONE  {pep_name} vs {chunk_label} — {dt:.1f}s, {hits} hits")
+
     return {
         "name": pep_name,
         "seq": pep_seq,
         "chunk": chunk_label,
+        "duration": dt,
+        "hits": hits,
         "output": f"---- B={chunk_label}\n{out}" if out.strip() else "",
     }
 
@@ -205,17 +223,32 @@ def run_needle_alignments(
     total_chunk_tasks = len(tasks) * len(chunk_paths)
     chunk_size_gb = os.path.getsize(chunk_paths[0]) / (1024**3)
     print(f"  [Step 2b] Running needle: {len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} alignment jobs")
-    print(f"            Chunk size: ~{chunk_size_gb:.1f} GB each — progress shown per chunk completion")
+    print(f"            Chunk size: ~{chunk_size_gb:.1f} GB each")
     sys.stdout.flush()
 
-    import time as _time
+    # Set up logs directory for real-time monitoring
+    logs_dir = os.path.join(os.path.dirname(output_dir), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    progress_log = os.path.join(logs_dir, "progress.log")
+    # Clear previous progress log
+    with open(progress_log, "w") as f:
+        f.write(f"[{_time.strftime('%H:%M:%S')}] Needle alignment started: "
+                f"{len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} jobs\n")
+        f.write(f"[{_time.strftime('%H:%M:%S')}] Workers: {workers}\n")
+
+    print(f"  [Step 2b] Logs directory: {logs_dir}")
+    print(f"            Progress log:  {progress_log}")
+    print(f"            Worker logs:   {logs_dir}/worker_<PID>.log")
+    print(f"            >>> Monitor with: tail -f {progress_log}")
+    sys.stdout.flush()
+
     t_start = _time.time()
 
-    # Build per-chunk tasks for finer-grained progress
+    # Build per-chunk tasks for finer-grained progress (include logs_dir)
     chunk_tasks = []
     for pep_name, pep_seq in tasks:
         for cp in chunk_paths:
-            chunk_tasks.append((pep_name, pep_seq, cp, needle_bin))
+            chunk_tasks.append((pep_name, pep_seq, cp, needle_bin, logs_dir))
 
     # Collect results grouped by peptide
     peptide_outputs = {}
@@ -230,18 +263,26 @@ def run_needle_alignments(
             avg = elapsed / completed
             remaining = avg * (total_chunk_tasks - completed)
             eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
-            print(
-                f"  [Step 2b] {completed}/{total_chunk_tasks}: "
+            msg = (
+                f"{completed}/{total_chunk_tasks}: "
                 f"{result['name']} ({result['seq']}) vs {result['chunk']} "
+                f"— {result.get('duration', 0):.1f}s, {result.get('hits', 0)} hits "
                 f"| {elapsed:.0f}s elapsed | ETA ~{eta_str}"
             )
+            print(f"  [Step 2b] {msg}")
             sys.stdout.flush()
+            # Also write to progress log file (tail -f friendly)
+            with open(progress_log, "a") as f:
+                f.write(f"[{_time.strftime('%H:%M:%S')}] {msg}\n")
             if result["output"]:
                 peptide_outputs[result["name"]]["parts"].append(result["output"])
 
     elapsed = _time.time() - t_start
-    print(f"  [Step 2b] All {total_chunk_tasks} alignments done in {elapsed:.1f}s")
+    done_msg = f"All {total_chunk_tasks} alignments done in {elapsed:.1f}s"
+    print(f"  [Step 2b] {done_msg}")
     sys.stdout.flush()
+    with open(progress_log, "a") as f:
+        f.write(f"[{_time.strftime('%H:%M:%S')}] {done_msg}\n")
 
     # Write output files
     for pep_name, data in peptide_outputs.items():
