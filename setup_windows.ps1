@@ -316,14 +316,16 @@ function Setup-NetMHCpanWsl {
         if (Test-Path $dataTar) {
             Write-Info "Extracting data files..."
             $wslDir = ConvertTo-WslPath $Dir
-            wsl bash -c "cd '$wslDir' && tar -xzf data.Linux.tar.gz"
+            $extractCmd = "cd $wslDir && tar -xzf data.Linux.tar.gz"
+            wsl bash -c $extractCmd
             Write-Ok "Data files extracted"
         } else {
             if ($Version -eq "4.0") {
                 Write-Info "Downloading netMHCpan 4.0 data files..."
                 $dataUrl = "https://services.healthtech.dtu.dk/services/NetMHCpan-4.0/data.Linux.tar.gz"
                 $wslDir = ConvertTo-WslPath $Dir
-                wsl bash -c "cd '$wslDir' && curl -sS -o data.Linux.tar.gz '$dataUrl' && tar -xzf data.Linux.tar.gz"
+                $dlCmd = "cd $wslDir && curl -sS -o data.Linux.tar.gz $dataUrl && tar -xzf data.Linux.tar.gz"
+                wsl bash -c $dlCmd
                 Write-Ok "Data files downloaded and extracted"
             } else {
                 Write-Warn "Data directory incomplete ($dataCount files) and no data tarball found"
@@ -337,7 +339,8 @@ function Setup-NetMHCpanWsl {
 
     # Create data symlink inside Linux_x86_64
     $wslDir = ConvertTo-WslPath $Dir
-    wsl bash -c "ln -sf '$wslDir/data' '$wslDir/Linux_x86_64/data' 2>/dev/null" 2>$null
+    $symlinkCmd = "ln -sf $wslDir/data $wslDir/Linux_x86_64/data 2>/dev/null"
+    wsl bash -c $symlinkCmd 2>$null
 
     # Create WSL wrapper batch file
     $wrapperPath = Join-Path $Dir "netMHCpan_wsl.bat"
@@ -348,14 +351,16 @@ function Setup-NetMHCpanWsl {
 
         $wslNetMHCpanDir = ConvertTo-WslPath $Dir
 
-        $wrapperContent = @"
+        # Use single-quoted here-string to avoid PowerShell variable expansion
+        # then replace the placeholder with the actual WSL path
+        $wrapperContent = @'
 @echo off
-REM WSL wrapper for netMHCpan $Version
+REM WSL wrapper for netMHCpan
 REM Translates Windows paths to WSL paths and runs inside WSL
 
 setlocal EnableDelayedExpansion
 
-set NMHOME=$wslNetMHCpanDir
+set NMHOME=__WSL_DIR__
 set ARGS=
 
 :parse_args
@@ -391,8 +396,8 @@ shift
 goto parse_args
 
 :run
-set "WSL_CMD=export NMHOME=%NMHOME% && export TMPDIR=/tmp && export NETMHCpan=%NMHOME%/Linux_x86_64 && $NETMHCpan/bin/netMHCpan !ARGS!"
-wsl bash -c "%WSL_CMD%"
+set "NETMHCpan=%NMHOME%/Linux_x86_64"
+wsl bash -c "export NMHOME=%NMHOME% && export TMPDIR=/tmp && %NETMHCpan%/bin/netMHCpan !ARGS!"
 goto :eof
 
 :lowercase
@@ -400,7 +405,8 @@ for %%a in (a b c d e f g h i j k l m n o p q r s t u v w x y z) do (
     set "%~1=!%~1:%%a=%%a!"
 )
 goto :eof
-"@
+'@
+        $wrapperContent = $wrapperContent.Replace('__WSL_DIR__', $wslNetMHCpanDir)
         $wrapperContent | Out-File -FilePath $wrapperPath -Encoding ASCII
         Write-Ok "WSL wrapper created: $wrapperPath"
     }
@@ -503,7 +509,8 @@ CANDIDATE_PEPTIDES_FASTA=$DataDir\candidate_peptides.fasta
 "@
 
 $envFile = Join-Path $ProjectRoot ".env"
-$envContent | Out-File -FilePath $envFile -Encoding UTF8
+# Use .NET to write without BOM (PowerShell's UTF8 encoding adds BOM which breaks .env parsing)
+[System.IO.File]::WriteAllText($envFile, $envContent, [System.Text.UTF8Encoding]::new($false))
 Write-Ok ".env configured"
 
 # ---------------------------------------------------------------------------
