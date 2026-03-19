@@ -14,13 +14,19 @@ from config import OUTPUT_DIR_PATH
 
 def main_random_peptide(seed: int, accepted_count: int, output_dir: str):
     """Run simulation with random peptide generation."""
+    out_path = os.path.join(output_dir, f"seed{seed}_acc{accepted_count}.csv")
+
+    if os.path.isfile(out_path):
+        print(f"Output already exists: {out_path}")
+        print(f"Skipping simulation (seed={seed}, accepted={accepted_count}). Delete the file to re-run.")
+        return None
+
     print(f"Starting simulation with random peptide (Seed: {seed}, Accepted target: {accepted_count})")
     df_name = simulation_process(seed, number_of_accepted_peptides=accepted_count)
-    
-    out_path = os.path.join(output_dir, f"{seed}.csv")
+
     df_name.to_csv(out_path, index=False)
     print(f"Results successfully saved to: {out_path}")
-    print("\033[92mWe finished the MCMC simulation part - you can go with the output to the filtering part!\033[0m")
+    print("\033[92mMCMC simulation complete — output ready for filtering.\033[0m")
     return df_name
 
 def main_external_peptide_list(seed: int, fasta_path: str, accepted_count: int, output_dir: str):

@@ -27,7 +27,8 @@ def simulation_process(seed: int, external_peptide_str=None, number_of_accepted_
     print(f"  [MCMC] Running initial MHC binding prediction...")
     first_pep_df = firs_pep_init(peptide, seed)
     initial_score = first_pep_df[OPTIMIZATION_COLUMN].values[0]
-    print(f"  [MCMC] Initial score ({OPTIMIZATION_COLUMN}): {initial_score:.4f}")
+    initial_binders = int(first_pep_df["total_binders"].values[0]) if "total_binders" in first_pep_df.columns else "N/A"
+    print(f"  [MCMC] Initial: sum_of_all_hla={initial_score:.4f}, total_binders={initial_binders}")
     appended_data = pd.concat([appended_data, first_pep_df], ignore_index=True)
 
     last_true_val = None
@@ -61,9 +62,11 @@ def simulation_process(seed: int, external_peptide_str=None, number_of_accepted_
         if acceptance_flag:
             last_true_pep = peptide
             last_true_val = appended_data.tail(1)[OPTIMIZATION_COLUMN].values[0]
+            current_binders = int(appended_data.tail(1)["total_binders"].values[0]) if "total_binders" in appended_data.columns else "N/A"
             accepted_count += 1
             print(f"  [MCMC] Iteration {iteration}: ACCEPTED ({accepted_count}/{number_of_accepted_peptides}) "
-                  f"| {former_aa}{position}->{new_aa} | peptide={peptide} | score={last_true_val:.4f}")
+                  f"| {former_aa}{position}->{new_aa} | peptide={peptide} "
+                  f"| sum_of_all_hla={last_true_val:.4f} | total_binders={current_binders}")
             sys.stdout.flush()
         else:
             if last_true_pep is not None:

@@ -81,39 +81,70 @@ def run_stage0() -> dict:
         print("Peptides above threshold:", len(data["threshold_8_hla_passing_peptides"]))
     """
     import sys
+    import glob
 
     memo_dir = os.path.join(MEMOIZATION_DIR, "stage-0")
     os.makedirs(memo_dir, exist_ok=True)
 
+    # Source files for cache invalidation
+    robust_src = [ROBUST_DF_CSV_PATH] if ROBUST_DF_CSV_PATH else []
+    hla_src = [HLA_COMBINATIONS_PICKLE] if HLA_COMBINATIONS_PICKLE else []
+    sim_csvs = sorted(glob.glob(os.path.join(SIMULATION_CSV_DIR, "*.csv"))) if SIMULATION_CSV_DIR else []
+
     cache_path = os.path.join(memo_dir, "robust_df.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading combined MCMC results (robust_df)... {'(cached)' if cached else '(computing)'}")
+    print(f"[Stage 0] Loading combined MCMC results from {ROBUST_DF_CSV_PATH}...")
+    if cached:
+        # Check if cache is stale
+        if robust_src and os.path.exists(robust_src[0]) and os.path.getmtime(robust_src[0]) > os.path.getmtime(cache_path):
+            print(f"[Stage 0]   (cache stale — source file is newer, recomputing)")
+        else:
+            print(f"[Stage 0]   (cached at {cache_path})")
     sys.stdout.flush()
-    robust_df = memoize_function(_load_robust_df, cache_path)
+    robust_df = memoize_function(_load_robust_df, cache_path, source_paths=robust_src)
     print(f"[Stage 0]   -> {len(robust_df)} peptides, {len(robust_df.columns)} columns")
     sys.stdout.flush()
 
     cache_path = os.path.join(memo_dir, "all_hla_combinations.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading HLA combination mapping... {'(cached)' if cached else '(computing)'}")
+    print(f"[Stage 0] Loading HLA combination mapping from {HLA_COMBINATIONS_PICKLE}...")
+    if cached:
+        if hla_src and os.path.exists(hla_src[0]) and os.path.getmtime(hla_src[0]) > os.path.getmtime(cache_path):
+            print(f"[Stage 0]   (cache stale — source file is newer, recomputing)")
+        else:
+            print(f"[Stage 0]   (cached)")
     sys.stdout.flush()
-    all_hla_combinations = memoize_function(_load_hla_combinations, cache_path)
+    all_hla_combinations = memoize_function(_load_hla_combinations, cache_path, source_paths=hla_src)
     print(f"[Stage 0]   -> {len(all_hla_combinations)} unique HLA combinations")
     sys.stdout.flush()
 
     cache_path = os.path.join(memo_dir, "df_dict.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading per-seed simulation DataFrames... {'(cached)' if cached else '(computing)'}")
+    print(f"[Stage 0] Loading per-seed simulation DataFrames from {SIMULATION_CSV_DIR}...")
+    if cached:
+        if sim_csvs and os.path.getmtime(sim_csvs[-1]) > os.path.getmtime(cache_path):
+            print(f"[Stage 0]   (cache stale — CSV files are newer, recomputing)")
+        else:
+            print(f"[Stage 0]   (cached)")
     sys.stdout.flush()
     df_dict = memoize_function(
         lambda: create_dict_of_df(SIMULATION_CSV_DIR), cache_path,
+        source_paths=sim_csvs,
     )
     print(f"[Stage 0]   -> {len(df_dict)} seed files loaded")
     sys.stdout.flush()
 
+    # threshold depends on both df_dict and hla_combinations — invalidate if either changed
     cache_path = os.path.join(memo_dir, "threshold_8_hla_passing_peptides.pickle")
+    threshold_sources = robust_src + hla_src + sim_csvs
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Filtering peptides binding >={MIN_HLA_BINDING_COUNT} HLA supertypes... {'(cached)' if cached else '(computing)'}")
+    print(f"[Stage 0] Filtering peptides binding >={MIN_HLA_BINDING_COUNT} HLA supertypes...")
+    if cached:
+        stale = any(os.path.exists(s) and os.path.getmtime(s) > os.path.getmtime(cache_path) for s in threshold_sources)
+        if stale:
+            print(f"[Stage 0]   (cache stale — source data is newer, recomputing)")
+        else:
+            print(f"[Stage 0]   (cached)")
     sys.stdout.flush()
     threshold_8_hla_passing_peptides = memoize_function(
         lambda: get_peptides_by_hla_threshold(
@@ -122,6 +153,7 @@ def run_stage0() -> dict:
             hla_combinations_map=all_hla_combinations,
         ),
         cache_path,
+        source_paths=threshold_sources,
     )
     print(f"[Stage 0]   -> {len(threshold_8_hla_passing_peptides)} HLA combinations passed threshold")
     sys.stdout.flush()

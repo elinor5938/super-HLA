@@ -154,10 +154,19 @@ def _detect_stage_status() -> dict:
     if os.path.isdir(MCMC_OUTPUT_DIR):
         mcmc_csvs = [f for f in os.listdir(MCMC_OUTPUT_DIR) if f.endswith(".csv")]
     if mcmc_csvs:
-        seeds = [f.removesuffix(".csv") for f in sorted(mcmc_csvs)]
+        # Parse seed and accepted from filenames like "seed1_acc100.csv"
+        import re
+        descriptions = []
+        for f in sorted(mcmc_csvs):
+            m = re.match(r"seed(\d+)_acc(\d+)\.csv", f)
+            if m:
+                descriptions.append(f"seed={m.group(1)},acc={m.group(2)}")
+            else:
+                descriptions.append(f.removesuffix(".csv"))
+        desc_str = ", ".join(descriptions[:5]) + ("..." if len(descriptions) > 5 else "")
         status[1] = {
             "complete": True,
-            "details": f"{len(mcmc_csvs)} seed(s): {', '.join(seeds[:5])}{'...' if len(seeds) > 5 else ''}",
+            "details": f"{len(mcmc_csvs)} run(s): {desc_str}",
         }
     else:
         status[1] = {"complete": False, "details": "No MCMC output CSVs found"}
@@ -325,6 +334,7 @@ def print_menu():
     print(f"    {WHITE}[v]{RESET}  \U0001f50d  Validate setup (prerequisites check)")
     print(f"    {WHITE}[s]{RESET}  \U0001f4ca  Show status dashboard")
     print(f"    {WHITE}[r]{RESET}  \U0001f504  Reset pipeline state")
+    print(f"    {WHITE}[c]{RESET}  \U0001f5d1  Clear memoization cache (force recompute)")
     print(f"    {WHITE}[q]{RESET}  \U0001f6aa  Quit")
     print()
     _print_divider()
@@ -436,7 +446,12 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
         t_start = time.time()
 
         for i, seed in enumerate(seeds):
-            print(f"    {RUNNING}  Seed {seed} ({i+1}/{len(seeds)})...")
+            csv_path = os.path.join(MCMC_OUTPUT_DIR, f"seed{seed}_acc{accepted}.csv")
+            if os.path.isfile(csv_path):
+                print(f"    {SKIP}  Seed {seed} (accepted={accepted}) already exists: {csv_path}")
+                continue
+
+            print(f"    {RUNNING}  Seed {seed} ({i+1}/{len(seeds)}) — target: {accepted} accepted mutations...")
 
             _run_subprocess_streamed(
                 [interpreter, "-u", mcmc_main, "--mode", "random",
@@ -444,9 +459,8 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
                 timeout=3600,
             )
 
-            csv_path = os.path.join(MCMC_OUTPUT_DIR, f"{seed}.csv")
             if os.path.isfile(csv_path):
-                print(f"    {DONE}  Seed {seed} \u2192 {os.path.basename(csv_path)}")
+                print(f"    {DONE}  Seed {seed} \u2192 {csv_path}")
             else:
                 print(f"    {DONE}  Seed {seed} completed")
 
@@ -639,6 +653,21 @@ def reset_state():
     print(f"    To re-run a stage, its output data is still on disk (use it or delete it).{RESET}\n")
 
 
+def clear_cache():
+    """Delete all memoization cache files so stages recompute from source data."""
+    memoization_dir = os.environ.get("MEMOIZATION_DIR", os.path.join(DATA_DIR, "memoization"))
+    if os.path.isdir(memoization_dir):
+        count = 0
+        for root, dirs, files in os.walk(memoization_dir):
+            for f in files:
+                if f.endswith(".pickle"):
+                    os.remove(os.path.join(root, f))
+                    count += 1
+        print(f"\n    {DONE}  Cleared {count} cached pickle file(s) from {memoization_dir}\n")
+    else:
+        print(f"\n    {DIM}No cache directory found at {memoization_dir}{RESET}\n")
+
+
 # ---------------------------------------------------------------------------
 # MCMC seed prompt
 # ---------------------------------------------------------------------------
@@ -699,6 +728,8 @@ def interactive():
             print_status()
         elif choice == "r":
             reset_state()
+        elif choice == "c":
+            clear_cache()
         elif choice in ("q", "quit", "exit"):
             print(f"\n    {DIM}Goodbye! \U0001f44b{RESET}\n")
             break
