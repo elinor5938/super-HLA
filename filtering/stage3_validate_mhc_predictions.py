@@ -156,5 +156,48 @@ def run_stage3(filtered_peptides: list) -> dict:
             result["top_flurry"] = _select_top_n(scores_df, "one_side_mean_flurry", TOP_N_PEPTIDES)
             print(f"[Stage 3] Top {TOP_N_PEPTIDES} by MHCflurry: {len(result['top_flurry'])}")
 
+    # ---- Cross-predictor agreement summary ----
+    all_peptide_sets = []
+    predictor_names = []
+    if not result["top_primary"].empty:
+        all_peptide_sets.append(set(result["top_primary"].index))
+        predictor_names.append("primary")
+    if not result["top_net40"].empty:
+        all_peptide_sets.append(set(result["top_net40"].index))
+        predictor_names.append("net4.0")
+    if not result["top_flurry"].empty:
+        all_peptide_sets.append(set(result["top_flurry"].index))
+        predictor_names.append("flurry")
+
+    if len(all_peptide_sets) > 1:
+        shared = all_peptide_sets[0]
+        for s in all_peptide_sets[1:]:
+            shared = shared & s
+        union = all_peptide_sets[0]
+        for s in all_peptide_sets[1:]:
+            union = union | s
+        if shared == union:
+            print(f"[Stage 3] All {len(predictor_names)} predictors agree: same {len(shared)} peptides selected")
+        else:
+            print(f"[Stage 3] Cross-predictor overlap: {len(shared)}/{len(union)} peptides shared across {', '.join(predictor_names)}")
+    sys.stdout.flush()
+
+    # ---- List final peptides ----
+    final_peptides = list(scores_df.index)
+    n_total = len(filtered_peptides)
+    if n_total <= TOP_N_PEPTIDES:
+        print(f"[Stage 3] Note: only {n_total} peptides in input (< {TOP_N_PEPTIDES} cutoff), so ALL pass cross-validation")
+    print(f"[Stage 3] Final {len(final_peptides)} validated peptides:")
+    for pep in final_peptides:
+        score_parts = []
+        if "one_side_mean_primary" in scores_df.columns:
+            score_parts.append(f"primary={scores_df.at[pep, 'one_side_mean_primary']:.4f}")
+        if "one_side_mean_net40" in scores_df.columns:
+            score_parts.append(f"net4.0={scores_df.at[pep, 'one_side_mean_net40']:.4f}")
+        if "one_side_mean_flurry" in scores_df.columns:
+            score_parts.append(f"flurry={scores_df.at[pep, 'one_side_mean_flurry']:.4f}")
+        print(f"[Stage 3]   {pep}  ({', '.join(score_parts)})")
+    sys.stdout.flush()
+
     result["scores_df"] = scores_df
     return result
