@@ -177,6 +177,27 @@ HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta
 
 ## Running the Pipeline
 
+### Quick Start — Pipeline Orchestrator
+
+The easiest way to run the full pipeline is the interactive orchestrator:
+
+```bash
+python run.py
+```
+
+This gives you an interactive menu with a status dashboard showing which stages have been completed, what's currently running, and what's pending. You can also use it non-interactively:
+
+```bash
+python run.py --status      # Show pipeline status
+python run.py --run-all     # Run all stages (skips completed ones)
+python run.py --stage 1     # Run a specific stage
+python run.py --stage 1 --seeds 1,2,3 --accepted 100  # MCMC with options
+```
+
+### Manual Execution
+
+You can also run each stage individually:
+
 ### Step 1: Run MCMC simulations
 
 ```bash
@@ -236,6 +257,7 @@ See [`self_similarity/README.md`](self_similarity/README.md) for full details.
 ```
 super-HLA/
 ├── .env                        <- All environment variable configuration
+├── run.py                      <- Pipeline orchestrator (interactive + CLI)
 ├── requirements.txt
 ├── validate_setup.py           <- Pre-flight check for all prerequisites
 ├── prepare_filtering_data.py   <- Bridges MCMC output to filtering input
