@@ -352,7 +352,8 @@ def _print_stage_done(stage: dict, elapsed: float, summary: str = ""):
 def _print_stage_failed(stage: dict, error: str):
     print()
     print(f"    {FAILED}  {BOLD}Stage {stage['id']} failed{RESET}")
-    print(f"    {RED}{error}{RESET}")
+    for line in str(error).split("\n"):
+        print(f"    {RED}{line}{RESET}")
     print()
 
 
@@ -420,8 +421,10 @@ def run_stage_2():
         )
 
         if result.returncode != 0:
-            stderr = result.stderr.strip().split("\n")[-1] if result.stderr else "Unknown error"
-            raise RuntimeError(stderr)
+            error_output = result.stderr.strip() if result.stderr else ""
+            if not error_output:
+                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
+            raise RuntimeError(error_output)
 
         # Print captured output indented
         for line in result.stdout.strip().split("\n"):
@@ -464,8 +467,10 @@ def run_stage_3():
         )
 
         if result.returncode != 0:
-            stderr = result.stderr.strip().split("\n")[-1] if result.stderr else "Unknown error"
-            raise RuntimeError(stderr)
+            error_output = result.stderr.strip() if result.stderr else ""
+            if not error_output:
+                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
+            raise RuntimeError(error_output)
 
         # Show output, highlighting key lines
         for line in result.stdout.strip().split("\n"):
@@ -505,8 +510,10 @@ def run_stage_4():
         )
 
         if result.returncode != 0:
-            stderr = result.stderr.strip().split("\n")[-1] if result.stderr else "Unknown error"
-            raise RuntimeError(stderr)
+            error_output = result.stderr.strip() if result.stderr else ""
+            if not error_output:
+                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
+            raise RuntimeError(error_output)
 
         for line in result.stdout.strip().split("\n"):
             if "Results:" in line or "==" in line:
