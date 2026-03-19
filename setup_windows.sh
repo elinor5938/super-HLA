@@ -400,10 +400,23 @@ _install_netmhcpan_from_tarball() {
             if [ -n "$data_tar" ]; then
                 run_with_spinner "Extracting data files" bash -c "cd '$target_dir' && tar -xzf '$(basename "$data_tar")'"
                 ok "Data files extracted"
-            elif [ "$version" = "4.0" ]; then
-                download_with_progress "$NETMHCPAN_40_DATA_URL" "$target_dir/data.Linux.tar.gz"
-                run_with_spinner "Extracting data files" bash -c "cd '$target_dir' && tar -xzf data.Linux.tar.gz"
-                ok "Data files downloaded and extracted"
+            else
+                # Download data from DTU
+                local dl_url="" dl_name=""
+                for try_url in \
+                    "https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/data.tar.gz" \
+                    "https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/data.Linux.tar.gz"; do
+                    if curl -sfI "$try_url" >/dev/null 2>&1; then
+                        dl_url="$try_url"
+                        dl_name=$(basename "$try_url")
+                        break
+                    fi
+                done
+                if [ -n "$dl_url" ]; then
+                    download_with_progress "$dl_url" "$target_dir/$dl_name"
+                    run_with_spinner "Extracting data files" bash -c "cd '$target_dir' && tar -xzf '$dl_name'"
+                    ok "Data files downloaded and extracted"
+                fi
             fi
         fi
 
@@ -596,14 +609,30 @@ _setup_netmhcpan_native() {
         elif [ -f "$dir/data.Linux.tar.gz" ]; then
             run_with_spinner "Extracting data files" bash -c "cd '$dir' && tar -xzf data.Linux.tar.gz"
             ok "Data files extracted"
-        elif [ "$version" = "4.0" ]; then
-            download_with_progress "$NETMHCPAN_40_DATA_URL" "$dir/data.Linux.tar.gz"
-            run_with_spinner "Extracting data files" bash -c "cd '$dir' && tar -xzf data.Linux.tar.gz"
-            ok "Data files downloaded and extracted"
         else
-            fail "Data directory incomplete and no data tarball found"
-            record_failure "$label data"
-            return
+            # Try downloading data from DTU (works for both 4.0 and 4.1)
+            local data_url=""
+            local data_filename=""
+            # Try version-specific URLs in order of preference
+            for try_url in \
+                "https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/data.tar.gz" \
+                "https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/data.Linux.tar.gz"; do
+                if curl -sfI "$try_url" >/dev/null 2>&1; then
+                    data_url="$try_url"
+                    data_filename=$(basename "$try_url")
+                    break
+                fi
+            done
+
+            if [ -n "$data_url" ]; then
+                download_with_progress "$data_url" "$dir/$data_filename"
+                run_with_spinner "Extracting data files" bash -c "cd '$dir' && tar -xzf '$data_filename'"
+                ok "Data files downloaded and extracted"
+            else
+                fail "Data directory incomplete and could not download data from DTU"
+                record_failure "$label data"
+                return
+            fi
         fi
     else
         skip "Data directory complete ($data_count files)"
