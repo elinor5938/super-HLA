@@ -885,12 +885,8 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     echo -e "  ${GREEN}🎉 All steps completed successfully!${NC}"
     echo ""
     echo -e "  ${BOLD}Next steps:${NC}"
-    echo -e "    1. Activate the venv:       ${CYAN}source .venv/bin/activate${NC}"
-    echo -e "    2. Validate setup:          ${CYAN}python validate_setup.py${NC}"
-    echo -e "    3. Run MCMC:                ${CYAN}python mcmc/main.py --mode random --seed 1 --accepted 100${NC}"
-    echo -e "    4. Prepare filtering:       ${CYAN}python prepare_filtering_data.py${NC}"
-    echo -e "    5. Run filtering:           ${CYAN}python -m filtering.main${NC}"
-    echo -e "    6. Self-similarity check:   ${CYAN}python -m self_similarity.main${NC}"
+    echo -e "    1. Activate the venv:  ${CYAN}source .venv/bin/activate${NC}"
+    echo -e "    2. Run the pipeline:   ${CYAN}python run.py${NC}"
 else
     echo -e "  ${RED}🚨 ${#FAILURES[@]} step(s) had issues:${NC}"
     for f in "${FAILURES[@]}"; do
