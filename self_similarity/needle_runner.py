@@ -207,14 +207,16 @@ def run_needle_alignments(
 
     if cached_count > 0:
         print(f"  [Step 2b] {cached_count} peptides already cached, {len(tasks)} remaining to compute")
-    print(f"  [Step 2b] Running needle for {len(tasks)} peptides ({len(tasks) * len(chunk_paths):,} alignments)...")
-    print(f"            This may take a while — each peptide is aligned against all {len(chunk_paths)} chunks")
+    total_alignments = len(tasks) * len(chunk_paths)
+    print(f"  [Step 2b] Running needle for {len(tasks)} peptides ({total_alignments:,} alignments)...")
+    print(f"            Each peptide is aligned against all {len(chunk_paths)} chunks")
     sys.stdout.flush()
 
     import time as _time
     t_start = _time.time()
+    bar_width = 30
 
-    # Run in parallel with progress tracking
+    # Run in parallel with progress bar
     completed = 0
     results = []
     with Pool(processes=workers) as pool:
@@ -223,12 +225,20 @@ def run_needle_alignments(
             elapsed = _time.time() - t_start
             avg_per_pep = elapsed / completed
             remaining = avg_per_pep * (len(tasks) - completed)
-            print(f"  [Step 2b] Peptide {completed}/{len(tasks)} done: {result['name']} "
-                  f"({elapsed:.0f}s elapsed, ~{remaining:.0f}s remaining)")
-            sys.stdout.flush()
+            pct = completed / len(tasks)
+            filled = int(bar_width * pct)
+            bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
+            eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
+            sys.stderr.write(
+                f"\r  [Step 2b] [{bar}] {completed}/{len(tasks)} "
+                f"({pct:.0%}) | {elapsed:.0f}s elapsed | ETA {eta_str}  "
+            )
+            sys.stderr.flush()
             results.append(result)
 
     elapsed = _time.time() - t_start
+    sys.stderr.write("\r" + " " * 100 + "\r")  # clear progress line
+    sys.stderr.flush()
     print(f"  [Step 2b] All {len(tasks)} peptides aligned in {elapsed:.1f}s")
     sys.stdout.flush()
 
