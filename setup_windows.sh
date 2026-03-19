@@ -152,6 +152,69 @@ _find_netmhcpan_dir() {
 }
 
 # ---------------------------------------------------------------------------
+# Helper: register for netMHCpan download at DTU Health Tech
+# ---------------------------------------------------------------------------
+_register_netmhcpan_download() {
+    local version="$1"
+    local platform="Linux"
+
+    echo "" >&2
+    echo -e "  ${BOLD}DTU Academic License Registration${NC}" >&2
+    echo -e "  ${DIM}(Your info is sent only to DTU Health Tech — required for their license)${NC}" >&2
+    echo "" >&2
+
+    read -rp "  Your full name: " reg_name
+    read -rp "  Your email: " reg_email
+    read -rp "  Your institution/university: " reg_affiliation
+
+    if [ -z "$reg_name" ] || [ -z "$reg_email" ]; then
+        echo -e "  ${YELLOW}Name and email are required. Opening browser instead...${NC}" >&2
+        _open_browser "https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=netMHCpan&version=${version}&packageversion=${version}b&platform=${platform}"
+        return
+    fi
+
+    echo -e "  ${BLUE}ℹ️  Submitting registration to DTU...${NC}" >&2
+
+    local response
+    response=$(curl -sS -X POST "https://services.healthtech.dtu.dk/cgi-bin/sw_ship" \
+        -d "software=netMHCpan&version=${version}&packageversion=${version}b&platform=${platform}" \
+        --data-urlencode "name=${reg_name}" \
+        --data-urlencode "mail=${reg_email}" \
+        --data-urlencode "affiliation=${reg_affiliation}" \
+        -d "position=phd_student&accept=yes" 2>&1)
+
+    if echo "$response" | grep -qi "manual approval"; then
+        echo -e "  ${YELLOW}⏳ Registration submitted — requires manual approval.${NC}" >&2
+        echo -e "  ${YELLOW}📧 DTU will email you at ${reg_email} once approved.${NC}" >&2
+        echo -e "  ${DIM}   This usually takes a few hours for academic emails.${NC}" >&2
+    else
+        echo -e "  ${GREEN}✅ Registration submitted!${NC}" >&2
+        echo -e "  ${YELLOW}📧 Check your email (${reg_email}) for the download link.${NC}" >&2
+        echo -e "  ${DIM}   It may take a few minutes. Check spam folder too.${NC}" >&2
+    fi
+
+    echo "" >&2
+    echo -e "  ${DIM}Also opening the DTU download page in your browser...${NC}" >&2
+    _open_browser "https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=netMHCpan&version=${version}&packageversion=${version}b&platform=${platform}"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: open a URL in the default browser (cross-platform)
+# ---------------------------------------------------------------------------
+_open_browser() {
+    local url="$1"
+    if command -v wslview &>/dev/null; then
+        wslview "$url" 2>/dev/null
+    elif [ -f "/mnt/c/Windows/explorer.exe" ]; then
+        /mnt/c/Windows/explorer.exe "$url" 2>/dev/null
+    elif command -v xdg-open &>/dev/null; then
+        xdg-open "$url" 2>/dev/null
+    else
+        echo -e "  ${CYAN}Open this URL in your browser: ${url}${NC}" >&2
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Helper: install netMHCpan from a tarball
 # ---------------------------------------------------------------------------
 _install_netmhcpan_from_tarball() {
@@ -191,12 +254,37 @@ _install_netmhcpan_from_tarball() {
     fi
 
     if [ -z "$tarball" ]; then
+        # Offer to register and download from DTU
         echo "" >&2
-        echo -e "  ${BOLD}Please download netMHCpan ${version} from DTU Health Tech:${NC}" >&2
-        echo -e "  ${CYAN}https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/${NC}" >&2
-        echo -e "  ${DIM}(Registration required — download the Linux .tar.gz file)${NC}" >&2
+        echo -e "  ${BOLD}netMHCpan ${version} requires a free academic license from DTU Health Tech.${NC}" >&2
+        echo -e "  ${DIM}The download link will be emailed to you after registration.${NC}" >&2
         echo "" >&2
-        read -rp "  Path to downloaded .tar.gz file (or leave empty to skip): " tarball
+        echo -e "  ${CYAN}[r]${NC} Register now (opens browser + submits form)" >&2
+        echo -e "  ${CYAN}[t]${NC} I already have the .tar.gz — let me provide the path" >&2
+        echo -e "  ${CYAN}[n]${NC} Skip" >&2
+        echo "" >&2
+        read -rp "  Choice [r/t/n]: " dl_choice
+
+        case "$dl_choice" in
+            [Rr]*)
+                _register_netmhcpan_download "$version"
+                echo "" >&2
+                echo -e "  ${BOLD}Once you receive the download link by email:${NC}" >&2
+                echo -e "  ${DIM}1. Download the Linux .tar.gz file${NC}" >&2
+                echo -e "  ${DIM}2. Save it to your Downloads folder${NC}" >&2
+                echo -e "  ${DIM}3. Come back here and provide the path${NC}" >&2
+                echo "" >&2
+                read -rp "  Path to downloaded .tar.gz file (or leave empty to skip): " tarball
+                ;;
+            [Tt]*)
+                read -rp "  Path to .tar.gz file: " tarball
+                ;;
+            *)
+                echo ""
+                return
+                ;;
+        esac
+
         if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then
             echo -e "  ${RED}Tarball not found. Skipping netMHCpan ${version}.${NC}" >&2
             echo ""
