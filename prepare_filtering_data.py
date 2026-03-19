@@ -55,8 +55,10 @@ def main():
     print(f"Found {len(csv_files)} MCMC output CSV(s) in {mcmc_dir}")
 
     # ---- Step 1: Combine all CSVs into robust_df ----
+    print(f"\n[Step 1/3] Combining MCMC output CSVs into a single dataset...")
     all_dfs = []
-    for f in sorted(csv_files):
+    for i, f in enumerate(sorted(csv_files), 1):
+        print(f"  Loading CSV {i}/{len(csv_files)}: {f}...")
         df = pd.read_csv(os.path.join(mcmc_dir, f), low_memory=False)
         # Keep only MCMC-accepted rows (True boolean or "True" string)
         accepted = df[
@@ -65,18 +67,19 @@ def main():
         ].copy()
         accepted = accepted.drop_duplicates(subset="Peptide", keep="first")
         all_dfs.append(accepted)
-        print(f"  {f}: {len(df)} total rows, {len(accepted)} accepted peptides")
+        print(f"    {len(df)} total rows, {len(accepted)} accepted peptides")
 
     robust_df = pd.concat(all_dfs, ignore_index=True)
     robust_df = robust_df.drop_duplicates(subset="Peptide", keep="first")
-    print(f"\nCombined robust_df: {len(robust_df)} unique accepted peptides")
+    print(f"  Combined robust_df: {len(robust_df)} unique accepted peptides")
 
     os.makedirs(data_dir, exist_ok=True)
     robust_csv_path = os.path.join(data_dir, "robust_df.csv")
     robust_df.to_csv(robust_csv_path, index=False)
-    print(f"Saved: {robust_csv_path}")
+    print(f"  Saved: {robust_csv_path}")
 
     # ---- Step 2: Build HLA combination mapping ----
+    print(f"\n[Step 2/3] Building HLA combination mapping...")
     hla_combinations = {}
     combo_id = 0
 
@@ -95,9 +98,10 @@ def main():
     pickle_path = os.path.join(data_dir, "all_hla_combinations.pickle")
     with open(pickle_path, "wb") as fh:
         pickle.dump(hla_combinations, fh)
-    print(f"Saved: {pickle_path} ({len(hla_combinations)} HLA combinations with >={MIN_HLA_BINDING_COUNT} binders)")
+    print(f"  Saved: {pickle_path} ({len(hla_combinations)} HLA combinations with >={MIN_HLA_BINDING_COUNT} binders)")
 
     # ---- Step 3: Update .env with correct paths ----
+    print(f"\n[Step 3/3] Updating .env configuration...")
     env_path = os.path.join(PROJECT_ROOT, ".env")
     env_updates = {
         "ROBUST_DF_CSV_PATH": robust_csv_path,

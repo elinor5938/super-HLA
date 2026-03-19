@@ -357,6 +357,69 @@ def _print_stage_failed(stage: dict, error: str):
     print()
 
 
+def _run_subprocess_streamed(cmd: list, cwd: str = None, timeout: int = 3600) -> int:
+    """Runs a subprocess and streams its stdout/stderr to the terminal in real-time.
+
+    Returns the process return code. Raises RuntimeError on non-zero exit with
+    captured stderr for error reporting.
+    """
+    proc = subprocess.Popen(
+        cmd, cwd=cwd,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, bufsize=1,
+    )
+
+    stderr_lines = []
+    stdout_lines = []
+    import threading
+
+    # Read stderr in a background thread to avoid deadlocks
+    def _read_stderr():
+        for line in proc.stderr:
+            stderr_lines.append(line)
+
+    stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+    stderr_thread.start()
+
+    t_start = time.time()
+    try:
+        for line in proc.stdout:
+            stdout_lines.append(line)
+            stripped = line.rstrip("\n")
+            # Color-code output lines
+            if stripped.startswith("[Stage") or stripped.startswith("  [MCMC") or stripped.startswith("="):
+                print(f"    {CYAN}{stripped}{RESET}")
+            elif "Done" in stripped or "complete" in stripped.lower() or "passed" in stripped.lower():
+                print(f"    {GREEN}{stripped}{RESET}")
+            elif "WARNING" in stripped or "failed" in stripped.lower() or "ERROR" in stripped:
+                print(f"    {YELLOW}{stripped}{RESET}")
+            elif "ACCEPTED" in stripped:
+                print(f"    {GREEN}{stripped}{RESET}")
+            elif stripped.startswith("  "):
+                print(f"    {DIM}{stripped}{RESET}")
+            else:
+                print(f"    {stripped}")
+            # Check timeout
+            if time.time() - t_start > timeout:
+                proc.kill()
+                raise TimeoutError(f"Process timed out after {timeout}s")
+
+        proc.wait()
+        stderr_thread.join(timeout=5)
+    except Exception:
+        proc.kill()
+        proc.wait()
+        raise
+
+    if proc.returncode != 0:
+        error_output = "".join(stderr_lines).strip()
+        if not error_output:
+            error_output = "".join(stdout_lines).strip() or "Unknown error (no output)"
+        raise RuntimeError(error_output)
+
+    return proc.returncode
+
+
 def run_stage_1(seeds: list = None, accepted: int = 100):
     """Run MCMC simulation for one or more seeds."""
     stage = STAGES[0]
@@ -367,7 +430,6 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
     _update_stage_state(1, "running")
 
     try:
-        # We need to be in the mcmc directory context
         mcmc_main = os.path.join(PROJECT_ROOT, "mcmc", "main.py")
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
@@ -376,15 +438,11 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
         for i, seed in enumerate(seeds):
             print(f"    {RUNNING}  Seed {seed} ({i+1}/{len(seeds)})...")
 
-            result = subprocess.run(
-                [interpreter, mcmc_main, "--mode", "random",
+            _run_subprocess_streamed(
+                [interpreter, "-u", mcmc_main, "--mode", "random",
                  "--seed", str(seed), "--accepted", str(accepted)],
-                capture_output=True, text=True, timeout=3600,
+                timeout=3600,
             )
-
-            if result.returncode != 0:
-                stderr = result.stderr.strip().split("\n")[-1] if result.stderr else "Unknown error"
-                raise RuntimeError(f"Seed {seed} failed: {stderr}")
 
             csv_path = os.path.join(MCMC_OUTPUT_DIR, f"{seed}.csv")
             if os.path.isfile(csv_path):
@@ -415,20 +473,10 @@ def run_stage_2():
         prep_script = os.path.join(PROJECT_ROOT, "prepare_filtering_data.py")
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
-        result = subprocess.run(
-            [interpreter, prep_script],
-            capture_output=True, text=True, timeout=300,
+        _run_subprocess_streamed(
+            [interpreter, "-u", prep_script],
+            timeout=300,
         )
-
-        if result.returncode != 0:
-            error_output = result.stderr.strip() if result.stderr else ""
-            if not error_output:
-                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
-            raise RuntimeError(error_output)
-
-        # Print captured output indented
-        for line in result.stdout.strip().split("\n"):
-            print(f"    {DIM}{line}{RESET}")
 
         elapsed = time.time() - t_start
 
@@ -460,26 +508,11 @@ def run_stage_3():
 
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
-        result = subprocess.run(
-            [interpreter, "-m", "filtering.main"],
+        _run_subprocess_streamed(
+            [interpreter, "-u", "-m", "filtering.main"],
             cwd=PROJECT_ROOT,
-            capture_output=True, text=True, timeout=7200,
+            timeout=7200,
         )
-
-        if result.returncode != 0:
-            error_output = result.stderr.strip() if result.stderr else ""
-            if not error_output:
-                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
-            raise RuntimeError(error_output)
-
-        # Show output, highlighting key lines
-        for line in result.stdout.strip().split("\n"):
-            if line.startswith("=") or "Pipeline Complete" in line:
-                print(f"    {BOLD}{line}{RESET}")
-            elif "Stage" in line and "]" in line:
-                print(f"    {CYAN}{line}{RESET}")
-            else:
-                print(f"    {DIM}{line}{RESET}")
 
         elapsed = time.time() - t_start
         _update_stage_state(3, "done")
@@ -503,25 +536,11 @@ def run_stage_4():
 
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
-        result = subprocess.run(
-            [interpreter, "-m", "self_similarity.main"],
+        _run_subprocess_streamed(
+            [interpreter, "-u", "-m", "self_similarity.main"],
             cwd=PROJECT_ROOT,
-            capture_output=True, text=True, timeout=86400,  # can be very long
+            timeout=86400,  # can be very long
         )
-
-        if result.returncode != 0:
-            error_output = result.stderr.strip() if result.stderr else ""
-            if not error_output:
-                error_output = result.stdout.strip() if result.stdout else "Unknown error (no output)"
-            raise RuntimeError(error_output)
-
-        for line in result.stdout.strip().split("\n"):
-            if "Results:" in line or "==" in line:
-                print(f"    {BOLD}{line}{RESET}")
-            elif "Safe peptides" in line or "Removed" in line or "written to" in line:
-                print(f"    {GREEN}{line}{RESET}")
-            else:
-                print(f"    {DIM}{line}{RESET}")
 
         elapsed = time.time() - t_start
 

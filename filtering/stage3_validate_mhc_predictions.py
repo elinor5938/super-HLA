@@ -59,6 +59,9 @@ def run_stage3(filtered_peptides: list) -> dict:
         ``top_net40``, ``top_flurry``. Optional predictors return empty
         DataFrames if skipped.
     """
+    import sys
+    import time
+
     memo_dir = os.path.join(MEMOIZATION_DIR, "stage-3")
     os.makedirs(memo_dir, exist_ok=True)
 
@@ -72,32 +75,48 @@ def run_stage3(filtered_peptides: list) -> dict:
         "top_flurry": pd.DataFrame(),
     }
 
+    print(f"[Stage 3] Input: {len(filtered_peptides)} peptides from {input_fasta}")
+    print(f"[Stage 3] Will run up to 3 MHC binding predictors for cross-validation")
+    sys.stdout.flush()
+
     # ---- Primary netMHCpan (required) ----
-    print("[Stage 3] Running primary netMHCpan prediction...")
+    print("[Stage 3] [1/3] Running primary netMHCpan prediction (this may take a few minutes)...")
+    sys.stdout.flush()
+    t = time.time()
     primary_df = send_to_prediction_as_is(input_fasta)
     primary_df.index.name = "Peptide"
     primary_df.columns = [f"{col}_primary" for col in primary_df.columns]
     predictor_dfs.append(primary_df)
+    print(f"[Stage 3] [1/3] Primary netMHCpan complete ({time.time() - t:.1f}s) — {len(primary_df)} peptides scored")
+    sys.stdout.flush()
 
     # ---- netMHCpan 4.0 (optional) ----
     net_40_df = None
     if NETMHCPAN_40_DIR_PATH:
         try:
-            print("[Stage 3] Running netMHCpan 4.0 prediction...")
+            print("[Stage 3] [2/3] Running netMHCpan 4.0 prediction...")
+            sys.stdout.flush()
+            t = time.time()
             net_40_df = send_to_prediction_as_is_net_4(input_fasta)
             net_40_df.index.name = "Peptide"
             net_40_df.columns = [f"{col}_netMHCpan_4.0" for col in net_40_df.columns]
             predictor_dfs.append(net_40_df)
+            print(f"[Stage 3] [2/3] netMHCpan 4.0 complete ({time.time() - t:.1f}s) — {len(net_40_df)} peptides scored")
+            sys.stdout.flush()
         except Exception as e:
-            print(f"[Stage 3] WARNING: netMHCpan 4.0 failed ({e}), skipping.")
+            print(f"[Stage 3] [2/3] WARNING: netMHCpan 4.0 failed ({e}), skipping.")
+            sys.stdout.flush()
     else:
-        print("[Stage 3] netMHCpan 4.0 not configured (NETMHCPAN_40_DIR_PATH), skipping.")
+        print("[Stage 3] [2/3] netMHCpan 4.0 not configured — skipping")
+        sys.stdout.flush()
 
     # ---- MHCflurry (optional) ----
     flurry_df = None
     try:
         import mhcflurry  # noqa: F401
-        print("[Stage 3] Running MHCflurry prediction...")
+        print("[Stage 3] [3/3] Running MHCflurry prediction...")
+        sys.stdout.flush()
+        t = time.time()
         flurry_df = memoize_function(
             lambda: send_to_mhcflurry(filtered_peptides),
             os.path.join(memo_dir, "mhcflurry-prediction.pickle"),
@@ -105,11 +124,15 @@ def run_stage3(filtered_peptides: list) -> dict:
         flurry_df.index.name = "Peptide"
         flurry_df.columns = [f"{col}_flurry" for col in flurry_df.columns]
         predictor_dfs.append(flurry_df)
+        print(f"[Stage 3] [3/3] MHCflurry complete ({time.time() - t:.1f}s) — {len(flurry_df)} peptides scored")
+        sys.stdout.flush()
     except ImportError:
-        print("[Stage 3] MHCflurry not installed, skipping. "
-              "Install with: pip install mhcflurry && mhcflurry-downloads fetch")
+        print("[Stage 3] [3/3] MHCflurry not installed — skipping")
+        sys.stdout.flush()
 
     # ---- Combine available predictor scores ----
+    print("[Stage 3] Combining scores from all available predictors...")
+    sys.stdout.flush()
     scores_df = pd.concat(predictor_dfs, axis=1)
 
     # ---- Compute one_side_mean per available predictor ----

@@ -84,9 +84,14 @@ def run_stage2(consensus_peptides: list) -> dict:
     Side effects:
         Writes ``result_no_triple.fasta`` to ``STAGE2_OUTPUT_DIR``.
     """
+    import sys
+
     if not consensus_peptides:
         print("[Stage 2] No peptides to filter.")
         return {"filtered_peptides": [], "filter_stats": {}}
+
+    print(f"[Stage 2] Applying 11 synthesis-difficulty filters to {len(consensus_peptides)} peptides...")
+    sys.stdout.flush()
 
     # Tally removal reasons
     stats = {
@@ -129,15 +134,26 @@ def run_stage2(consensus_peptides: list) -> dict:
         else:
             kept_peptides.append(pep)
 
+    removed_pass1 = len(consensus_peptides) - len(kept_peptides)
+    print(f"[Stage 2]   Pass 1 (motif filters): {removed_pass1} removed, {len(kept_peptides)} remaining")
+    sys.stdout.flush()
+
     # Second pass: remove triple repeats from the remaining set
+    print(f"[Stage 2]   Pass 2: checking for triple amino acid repeats...")
+    sys.stdout.flush()
     filtered_no_triple = [p for p in kept_peptides if not _has_triple_repeat(p)]
     stats["triple_repeat"] = len(kept_peptides) - len(filtered_no_triple)
 
     # Sorted ascending (least-filtered → most-filtered) for readability
     sorted_stats = dict(sorted(stats.items(), key=lambda item: item[1]))
 
-    print(f"[Stage 2] Peptides after synthesis filter (expected ~6 599): {len(filtered_no_triple)}")
-    print(f"[Stage 2] Filter breakdown: {sorted_stats}")
+    total_removed = len(consensus_peptides) - len(filtered_no_triple)
+    print(f"[Stage 2] Result: {len(filtered_no_triple)} peptides passed ({total_removed} removed)")
+    print(f"[Stage 2] Filter breakdown:")
+    for filter_name, count in sorted_stats.items():
+        if count > 0:
+            print(f"[Stage 2]   {filter_name}: {count} removed")
+    sys.stdout.flush()
 
     # Write FASTA output for stage 3
     os.makedirs(STAGE2_OUTPUT_DIR, exist_ok=True)

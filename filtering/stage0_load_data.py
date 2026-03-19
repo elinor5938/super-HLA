@@ -80,32 +80,51 @@ def run_stage0() -> dict:
         data = run_stage0()
         print("Peptides above threshold:", len(data["threshold_8_hla_passing_peptides"]))
     """
+    import sys
+
     memo_dir = os.path.join(MEMOIZATION_DIR, "stage-0")
     os.makedirs(memo_dir, exist_ok=True)
 
-    robust_df = memoize_function(
-        _load_robust_df,
-        os.path.join(memo_dir, "robust_df.pickle"),
-    )
+    cache_path = os.path.join(memo_dir, "robust_df.pickle")
+    cached = os.path.exists(cache_path)
+    print(f"[Stage 0] Loading combined MCMC results (robust_df)... {'(cached)' if cached else '(computing)'}")
+    sys.stdout.flush()
+    robust_df = memoize_function(_load_robust_df, cache_path)
+    print(f"[Stage 0]   -> {len(robust_df)} peptides, {len(robust_df.columns)} columns")
+    sys.stdout.flush()
 
-    all_hla_combinations = memoize_function(
-        _load_hla_combinations,
-        os.path.join(memo_dir, "all_hla_combinations.pickle"),
-    )
+    cache_path = os.path.join(memo_dir, "all_hla_combinations.pickle")
+    cached = os.path.exists(cache_path)
+    print(f"[Stage 0] Loading HLA combination mapping... {'(cached)' if cached else '(computing)'}")
+    sys.stdout.flush()
+    all_hla_combinations = memoize_function(_load_hla_combinations, cache_path)
+    print(f"[Stage 0]   -> {len(all_hla_combinations)} unique HLA combinations")
+    sys.stdout.flush()
 
+    cache_path = os.path.join(memo_dir, "df_dict.pickle")
+    cached = os.path.exists(cache_path)
+    print(f"[Stage 0] Loading per-seed simulation DataFrames... {'(cached)' if cached else '(computing)'}")
+    sys.stdout.flush()
     df_dict = memoize_function(
-        lambda: create_dict_of_df(SIMULATION_CSV_DIR),
-        os.path.join(memo_dir, "df_dict.pickle"),
+        lambda: create_dict_of_df(SIMULATION_CSV_DIR), cache_path,
     )
+    print(f"[Stage 0]   -> {len(df_dict)} seed files loaded")
+    sys.stdout.flush()
 
+    cache_path = os.path.join(memo_dir, "threshold_8_hla_passing_peptides.pickle")
+    cached = os.path.exists(cache_path)
+    print(f"[Stage 0] Filtering peptides binding >={MIN_HLA_BINDING_COUNT} HLA supertypes... {'(cached)' if cached else '(computing)'}")
+    sys.stdout.flush()
     threshold_8_hla_passing_peptides = memoize_function(
         lambda: get_peptides_by_hla_threshold(
             df_dict,
             min_hla_count=MIN_HLA_BINDING_COUNT,
             hla_combinations_map=all_hla_combinations,
         ),
-        os.path.join(memo_dir, "threshold_8_hla_passing_peptides.pickle"),
+        cache_path,
     )
+    print(f"[Stage 0]   -> {len(threshold_8_hla_passing_peptides)} HLA combinations passed threshold")
+    sys.stdout.flush()
 
     return {
         "robust_df": robust_df,
