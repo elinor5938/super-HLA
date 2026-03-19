@@ -189,5 +189,17 @@ def run_stage3(filtered_peptides: list) -> dict:
     print(f"[Stage 3] Final validated peptides: {len(scores_df)}")
     sys.stdout.flush()
 
+    # ---- Write final candidates FASTA for stage 4 (self-similarity) ----
+    final_peptides = list(scores_df.index)
+    candidate_fasta = os.path.join(STAGE2_OUTPUT_DIR, "candidate_peptides.fasta")
+    os.makedirs(STAGE2_OUTPUT_DIR, exist_ok=True)
+    with open(candidate_fasta, "w") as f:
+        for i, pep in enumerate(final_peptides):
+            f.write(f">candidate_{i}\n{pep}\n")
+    print(f"[Stage 3] Wrote {len(final_peptides)} candidate peptides to {candidate_fasta}")
+    print(f"[Stage 3] This file is the input for stage 4 (self-similarity analysis)")
+    sys.stdout.flush()
+
     result["scores_df"] = scores_df
+    result["candidate_fasta"] = candidate_fasta
     return result

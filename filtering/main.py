@@ -36,6 +36,26 @@ from filtering.stage2_filter_synthesis import run_stage2
 from filtering.stage3_validate_mhc_predictions import run_stage3
 
 
+def _update_env(key: str, value: str) -> None:
+    """Update or add a key=value pair in the project .env file."""
+    env_path = os.path.join(_PROJECT_ROOT, ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+    updated = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(f"{key}=") or stripped.startswith(f"# {key}="):
+            lines[i] = f"{key}={value}\n"
+            updated = True
+            break
+    if not updated:
+        lines.append(f"{key}={value}\n")
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+
+
 def main():
     import sys as _sys
 
@@ -93,6 +113,13 @@ def main():
         print(f"[Stage 3] Done in {time.time() - t3:.1f}s")
         _sys.stdout.flush()
 
+    # ── Update .env so stage 4 picks up the candidate FASTA ────────────────
+    candidate_fasta = stage3_data.get("candidate_fasta", "")
+    if candidate_fasta:
+        _update_env("CANDIDATE_PEPTIDES_FASTA", candidate_fasta)
+        print(f"\n[Config] Updated CANDIDATE_PEPTIDES_FASTA in .env -> {candidate_fasta}")
+        _sys.stdout.flush()
+
     # ── Summary ──────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  Pipeline Complete")
@@ -104,8 +131,10 @@ def main():
     print(f"  Top by primary netMHCpan:          {len(stage3_data['top_primary'])}")
     print(f"  Top by netMHCpan 4.0:              {len(stage3_data['top_net40'])}")
     print(f"  Top by MHCflurry:                  {len(stage3_data['top_flurry'])}")
+    if candidate_fasta:
+        print(f"  Candidates for stage 4:            {candidate_fasta}")
     print("=" * 60)
-    print("\nFiltering pipeline finished. Results are ready for downstream analysis.")
+    print("\nFiltering pipeline finished. Candidates ready for self-similarity analysis (stage 4).")
     _sys.stdout.flush()
 
 

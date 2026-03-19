@@ -94,25 +94,35 @@ def run_self_similarity(
     """
     print("\n" + "=" * 60)
     print("  Self-Similarity Analysis")
+    print("  Compare stage 3 candidates against human proteome 9-mers")
+    print("  to remove peptides that resemble human self-peptides")
     print("=" * 60)
 
     t_start = time.time()
 
-    # ── Step 1: Load candidates ───────────────────────────────────────────
+    # ── Step 1: Load candidates (output from stage 3 filtering) ───────────
+    candidates_source = None
     if candidate_peptides is not None:
         pep_dict = {f"seq{i}": seq for i, seq in enumerate(candidate_peptides)}
+        candidates_source = "passed as list"
     elif candidates_fasta:
         pep_dict = _load_peptides_from_fasta(candidates_fasta)
+        candidates_source = candidates_fasta
     elif os.path.isfile(CANDIDATE_PEPTIDES_FASTA):
         pep_dict = _load_peptides_from_fasta(CANDIDATE_PEPTIDES_FASTA)
+        candidates_source = CANDIDATE_PEPTIDES_FASTA
     else:
         raise FileNotFoundError(
             "No candidate peptides provided. Pass candidate_peptides list, "
             "candidates_fasta path, or set CANDIDATE_PEPTIDES_FASTA in .env"
         )
 
-    print(f"\n  Loaded {len(pep_dict)} candidate peptides.")
+    print(f"\n  [Step 1] Loaded {len(pep_dict)} candidate peptides from: {candidates_source}")
     all_sequences = list(pep_dict.values())
+
+    # Show what we're comparing against
+    human_ref = HUMAN_9MERS_FASTA or "(will be generated from proteome)"
+    print(f"  [Step 1] Human reference 9-mers: {human_ref}")
 
     # ── Step 2: Get alignment results ─────────────────────────────────────
     precomputed = precomputed_json or ALIGNMENT_RESULTS_JSON
