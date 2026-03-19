@@ -115,6 +115,12 @@ def _check_cdhit():
     return False, "Not found on PATH. Install: brew install cd-hit"
 
 
+def _check_needle():
+    if shutil.which("needle"):
+        return True, shutil.which("needle")
+    return False, "Not found on PATH. Install: brew install emboss"
+
+
 def _check_docker_installed():
     if shutil.which("docker"):
         return True, shutil.which("docker")
@@ -292,6 +298,30 @@ def validate() -> dict:
     ok, msg = _check_mhcflurry()
     add("Stage 3", "MHCflurry", ok, msg)
 
+    # ── Self-similarity prerequisites ──────────────────────────────────────
+    ok, msg = _check_needle()
+    add("Self-similarity", "EMBOSS needle", ok, msg)
+
+    # Check for pre-computed alignment results (not required — can run fresh)
+    alignment_json = os.environ.get("ALIGNMENT_RESULTS_JSON", "")
+    if alignment_json and os.path.isfile(alignment_json):
+        add("Self-similarity", "Pre-computed alignments", True, alignment_json, required=False)
+    else:
+        default_json = os.path.join(PROJECT_ROOT, "data", "needle", "alignment_results.json")
+        if os.path.isfile(default_json):
+            add("Self-similarity", "Pre-computed alignments", True, default_json, required=False)
+        else:
+            add("Self-similarity", "Pre-computed alignments", False,
+                "Not found (will need to run needle — very slow)", required=False)
+
+    # Check for human 9-mer peptidome (not required if pre-computed results exist)
+    human_9mers = os.environ.get("HUMAN_9MERS_FASTA", "")
+    if human_9mers and os.path.isfile(human_9mers):
+        add("Self-similarity", "Human 9-mer peptidome", True, human_9mers, required=False)
+    else:
+        add("Self-similarity", "Human 9-mer peptidome", False,
+            "Not set (needed only for fresh needle runs)", required=False)
+
     # ── Compute summary flags ─────────────────────────────────────────────
     def _all_ok(categories):
         return all(
@@ -301,12 +331,14 @@ def validate() -> dict:
 
     mcmc_ok = _all_ok(["Python", "MCMC", "Docker"])
     filtering_ok = _all_ok(["Python", "MCMC", "Filtering", "Stage 3", "Docker"])
+    self_sim_ok = _all_ok(["Python", "Self-similarity"])
     all_ok = all(c["ok"] for c in checks if c["required"])
 
     return {
         "all_ok": all_ok,
         "mcmc_ok": mcmc_ok,
         "filtering_ok": filtering_ok,
+        "self_similarity_ok": self_sim_ok,
         "checks": checks,
     }
 
@@ -335,8 +367,10 @@ def print_report(report: dict) -> None:
     print("  " + "=" * 50)
     mcmc_status = yes if report["mcmc_ok"] else no
     filt_status = yes if report["filtering_ok"] else no
-    print(f"    MCMC stage ready:      {mcmc_status}")
-    print(f"    Filtering stage ready: {filt_status}")
+    self_sim_status = yes if report["self_similarity_ok"] else no
+    print(f"    MCMC stage ready:            {mcmc_status}")
+    print(f"    Filtering stage ready:       {filt_status}")
+    print(f"    Self-similarity stage ready: {self_sim_status}")
     print("  " + "=" * 50)
 
     if report["all_ok"]:

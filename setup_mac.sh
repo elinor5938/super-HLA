@@ -3,7 +3,7 @@
 # setup_mac.sh — One-shot macOS setup for the Super-HLA pipeline
 #
 # Installs and configures all prerequisites:
-#   - Homebrew, Python 3.10, cd-hit
+#   - Homebrew, Python 3.10, cd-hit, EMBOSS (needle)
 #   - Python virtual environment + pip packages + MHCflurry
 #   - Docker images for netMHCpan 4.1 and 4.0
 #   - .env configuration
@@ -119,7 +119,7 @@ echo -e "${BOLD}╚════════════════════�
 # ---------------------------------------------------------------------------
 # Locate netMHCpan directories early so we can fail fast
 # ---------------------------------------------------------------------------
-step "Step 0/7: Locating netMHCpan installations"
+step "Step 0/8: Locating netMHCpan installations"
 
 NETMHCPAN_41_DIR=$(_find_netmhcpan_dir "4.1" "NETMHCPAN_41_DIR" "MHC_DIR_PATH")
 if [ -n "$NETMHCPAN_41_DIR" ]; then
@@ -139,7 +139,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 1: Homebrew
 # ---------------------------------------------------------------------------
-step "Step 1/7: Homebrew"
+step "Step 1/8: Homebrew"
 
 if command -v brew &>/dev/null; then
     skip "Homebrew $(brew --version 2>/dev/null | head -1 | awk '{print $2}')"
@@ -157,7 +157,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 2: Python 3.10 + cd-hit
 # ---------------------------------------------------------------------------
-step "Step 2/7: System packages (Python 3.10, cd-hit)"
+step "Step 2/8: System packages (Python 3.10, cd-hit, EMBOSS)"
 
 if command -v python3.10 &>/dev/null; then
     skip "Python $(python3.10 --version 2>&1 | awk '{print $2}')"
@@ -185,10 +185,23 @@ else
     fi
 fi
 
+if command -v needle &>/dev/null; then
+    skip "EMBOSS needle found at $(which needle)"
+else
+    info "Installing EMBOSS (provides needle for self-similarity analysis)..."
+    brew install emboss 2>/dev/null || true
+    if command -v needle &>/dev/null; then
+        ok "EMBOSS needle installed"
+    else
+        fail "EMBOSS installation failed"
+        record_failure "EMBOSS (needle)"
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # Step 3: Python virtual environment + packages
 # ---------------------------------------------------------------------------
-step "Step 3/7: Python virtual environment"
+step "Step 3/8: Python virtual environment"
 
 VENV_DIR="$PROJECT_ROOT/.venv"
 VENV_PIP="$VENV_DIR/bin/pip"
@@ -226,7 +239,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 4: Docker
 # ---------------------------------------------------------------------------
-step "Step 4/7: Docker"
+step "Step 4/8: Docker"
 
 if command -v docker &>/dev/null; then
     skip "Docker installed at $(which docker)"
@@ -392,13 +405,13 @@ WRAPPER
 # ---------------------------------------------------------------------------
 # Step 5: netMHCpan 4.1
 # ---------------------------------------------------------------------------
-step "Step 5/7: netMHCpan 4.1 (primary predictor)"
+step "Step 5/8: netMHCpan 4.1 (primary predictor)"
 _setup_netmhcpan_docker "4.1" "$NETMHCPAN_41_DIR" "netmhcpan41" "netMHCpan 4.1"
 
 # ---------------------------------------------------------------------------
 # Step 6: netMHCpan 4.0
 # ---------------------------------------------------------------------------
-step "Step 6/7: netMHCpan 4.0 (cross-validation predictor)"
+step "Step 6/8: netMHCpan 4.0 (cross-validation predictor)"
 
 if [ -z "$NETMHCPAN_40_DIR" ]; then
     # One more attempt: check for tarball next to 4.1
@@ -422,10 +435,60 @@ fi
 # ---------------------------------------------------------------------------
 # Step 7: Configure .env
 # ---------------------------------------------------------------------------
-step "Step 7/7: Project configuration (.env)"
+step "Step 7/8: Self-similarity data"
+
+DATA_DIR="$PROJECT_ROOT/data"
+NEEDLE_DIR="$DATA_DIR/needle"
+mkdir -p "$NEEDLE_DIR/chunks"
+mkdir -p "$NEEDLE_DIR/output"
+
+# Look for existing alignment_results.json (from old codebase)
+ALIGNMENT_JSON=""
+if [ -f "$NEEDLE_DIR/alignment_results.json" ]; then
+    skip "alignment_results.json already in data/needle/"
+    ALIGNMENT_JSON="$NEEDLE_DIR/alignment_results.json"
+else
+    # Search common locations for pre-computed results
+    for candidate in \
+        "$HOME/Code/Thesis-project/alignment_results.json" \
+        "$HOME/Documents/alignment_results.json"; do
+        if [ -f "$candidate" ]; then
+            info "Found pre-computed alignment results at: $candidate"
+            cp "$candidate" "$NEEDLE_DIR/alignment_results.json"
+            ALIGNMENT_JSON="$NEEDLE_DIR/alignment_results.json"
+            ok "Copied alignment_results.json to data/needle/"
+            break
+        fi
+    done
+fi
+
+if [ -z "$ALIGNMENT_JSON" ]; then
+    warn "No pre-computed alignment_results.json found."
+    info "You can run the self-similarity analysis fresh, or copy an existing one to:"
+    info "  $NEEDLE_DIR/alignment_results.json"
+fi
+
+# Look for human 9-mer peptidome FASTA
+HUMAN_9MERS=""
+for candidate in \
+    "$HOME/Code/Thesis-project/input/noncoding_9mers.fasta" \
+    "$HOME/Documents/noncoding_9mers.fasta"; do
+    if [ -f "$candidate" ]; then
+        HUMAN_9MERS="$candidate"
+        ok "Human 9-mer peptidome found at: $candidate"
+        break
+    fi
+done
+if [ -z "$HUMAN_9MERS" ]; then
+    info "Human 9-mer peptidome not found (set HUMAN_9MERS_FASTA in .env if available)"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 8/8: Configure .env
+# ---------------------------------------------------------------------------
+step "Step 8/8: Project configuration (.env)"
 
 ENV_FILE="$PROJECT_ROOT/.env"
-DATA_DIR="$PROJECT_ROOT/data"
 
 mkdir -p "$DATA_DIR/memoization"
 mkdir -p "$DATA_DIR/cd-hit/cluster1/input"
@@ -463,6 +526,18 @@ mkdir -p "$DATA_DIR/stage2-files"
     echo "CDHIT_CLUSTER2_INPUT_DIR=${DATA_DIR}/cd-hit/cluster2/input"
     echo "CDHIT_CLUSTER2_OUTPUT_DIR=${DATA_DIR}/cd-hit/cluster2/output"
     echo "STAGE2_OUTPUT_DIR=${DATA_DIR}/stage2-files"
+    echo ""
+    echo "# Self-similarity analysis (needle alignments)"
+    echo "NEEDLE_CHUNKS_DIR=${NEEDLE_DIR}/chunks"
+    echo "NEEDLE_OUTPUT_DIR=${NEEDLE_DIR}/output"
+    echo "ALIGNMENT_RESULTS_JSON=${NEEDLE_DIR}/alignment_results.json"
+    echo "CANDIDATE_PEPTIDES_FASTA=${DATA_DIR}/candidate_peptides.fasta"
+    if [ -n "$HUMAN_9MERS" ]; then
+        echo "HUMAN_9MERS_FASTA=${HUMAN_9MERS}"
+    else
+        echo "# HUMAN_9MERS_FASTA=  # Path to pre-chopped human proteome 9-mers FASTA"
+    fi
+    echo "# HUMAN_PROTEOME_FASTA=  # Path to full human proteome FASTA (for generating 9-mers)"
 } > "$ENV_FILE"
 
 ok ".env configured"
@@ -481,11 +556,12 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     echo -e "  ${GREEN}🎉 All steps completed successfully!${NC}"
     echo ""
     echo -e "  ${BOLD}Next steps:${NC}"
-    echo -e "    1. Activate the venv:  ${CYAN}source .venv/bin/activate${NC}"
-    echo -e "    2. Validate setup:     ${CYAN}python validate_setup.py${NC}"
-    echo -e "    3. Run MCMC:           ${CYAN}python mcmc/main.py --mode random --seed 1 --accepted 100${NC}"
-    echo -e "    4. Prepare filtering:  ${CYAN}python prepare_filtering_data.py${NC}"
-    echo -e "    5. Run filtering:      ${CYAN}python -m filtering.main${NC}"
+    echo -e "    1. Activate the venv:       ${CYAN}source .venv/bin/activate${NC}"
+    echo -e "    2. Validate setup:          ${CYAN}python validate_setup.py${NC}"
+    echo -e "    3. Run MCMC:                ${CYAN}python mcmc/main.py --mode random --seed 1 --accepted 100${NC}"
+    echo -e "    4. Prepare filtering:       ${CYAN}python prepare_filtering_data.py${NC}"
+    echo -e "    5. Run filtering:           ${CYAN}python -m filtering.main${NC}"
+    echo -e "    6. Self-similarity check:   ${CYAN}python -m self_similarity.main${NC}"
 else
     echo -e "  ${RED}🚨 ${#FAILURES[@]} step(s) had issues:${NC}"
     for f in "${FAILURES[@]}"; do

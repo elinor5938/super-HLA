@@ -1,11 +1,12 @@
 # Super-HLA Analysis Pipeline
 
-Super-HLA is a modular computational pipeline for discovering **super-binder peptides** — peptides that bind strongly to a broad set of MHC class I HLA supertypes. The pipeline is split into two independently runnable stages:
+Super-HLA is a modular computational pipeline for discovering **super-binder peptides** — peptides that bind strongly to a broad set of MHC class I HLA supertypes. The pipeline is split into three independently runnable stages:
 
 | Stage | Directory | Description |
 |-------|-----------|-------------|
 | 1. MCMC Simulation | [`mcmc/`](mcmc/) | Stochastic peptide space exploration via Markov Chain Monte Carlo |
 | 2. Filtering | [`filtering/`](filtering/) | Progressive filtering and cross-validation of candidates |
+| 3. Self-Similarity | [`self_similarity/`](self_similarity/) | Remove candidates that resemble human proteome peptides |
 
 Each stage has its own `README.md` with detailed run instructions and flowcharts. This document covers the one-time setup and the big-picture architecture.
 
@@ -32,12 +33,20 @@ flowchart LR
         F0 --> F1 --> F2 --> F3
     end
 
+    subgraph Self-Similarity Stage
+        direction TB
+        S1["Needle alignment vs<br/>human proteome 9-mers"]
+        S2["Filter: remove peptides<br/>similar to self"]
+        S1 --> S2
+    end
+
     CSV[(Simulation CSVs)] -- feeds --> F0
     MCMC --> CSV
-    F3 --> Result(["Super-binder<br/>Candidate Peptides"])
+    F3 --> Self-Similarity
+    S2 --> Result(["Safe Super-binder<br/>Candidate Peptides"])
 ```
 
-The MCMC stage stochastically explores peptide space, accepting mutations that improve broad HLA binding. After many independent simulation runs, the filtering stage consolidates all accepted peptides into a final ranked candidate list.
+The MCMC stage stochastically explores peptide space, accepting mutations that improve broad HLA binding. The filtering stage consolidates all accepted peptides into a ranked candidate list. The self-similarity stage removes candidates that are too similar to naturally occurring human peptides — a critical safety check for vaccine/immunotherapy applications.
 
 ---
 
@@ -83,6 +92,7 @@ pip install -r requirements.txt
 | `cd-hit` | Filtering stage 1 | `brew install cd-hit` |
 | `mhcflurry` | Filtering stage 3 (cross-validation) | `pip install mhcflurry && mhcflurry-downloads fetch` |
 | `Docker` | macOS only, for netMHCpan 4.0 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
+| `needle` (EMBOSS) | Self-similarity analysis | `brew install emboss` |
 
 ### macOS on Apple Silicon (arm64) -- Platform Notes
 
@@ -157,6 +167,10 @@ STAGE2_OUTPUT_DIR=/path/to/stage2-files/
 
 # Cross-validation predictor (stage 3)
 NETMHCPAN_40_DIR_PATH=/path/to/netMHCpan-4.0/
+
+# Self-similarity analysis (optional — paths auto-configured by setup_mac.sh)
+HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta
+# HUMAN_PROTEOME_FASTA=/path/to/human_proteome.fasta  # Only if generating 9-mers from scratch
 ```
 
 ---
@@ -195,6 +209,26 @@ python -m filtering.main
 
 See [`filtering/README.md`](filtering/README.md) for the filtering flowchart and configuration reference.
 
+### Step 4: Self-similarity analysis
+
+Check that candidate peptides are not too similar to naturally occurring human peptides:
+
+```bash
+python -m self_similarity.main
+```
+
+This uses EMBOSS `needle` (Needleman-Wunsch global alignment) to compare each candidate 9-mer peptide against the human proteome. Peptides with high similarity or identity to self are removed.
+
+**Using pre-computed results:** If you already have an `alignment_results.json` (from a previous run on a server), place it at `data/needle/alignment_results.json` or pass it directly:
+
+```bash
+python -m self_similarity.main --precomputed /path/to/alignment_results.json
+```
+
+**Running fresh:** Fresh needle alignments require a reference peptidome (`HUMAN_9MERS_FASTA` — all 9-mers from the human proteome, ~16 GB). This is extremely compute-intensive and may take hours/days. Pre-computed results are strongly preferred.
+
+See [`self_similarity/README.md`](self_similarity/README.md) for full details.
+
 ---
 
 ## Project Structure
@@ -232,10 +266,23 @@ super-HLA/
 │       ├── scoring.py          <- Binding score helpers + DataFrame loaders
 │       └── prediction.py       <- MHC predictor wrappers (netMHCpan + MHCflurry)
 │
+├── self_similarity/
+│   ├── README.md               <- Self-similarity docs and usage
+│   ├── main.py                 <- CLI entry point + orchestrator
+│   ├── config.py               <- .env loader for self-similarity settings
+│   ├── chopper.py              <- 9-mer sliding window FASTA chopper
+│   ├── needle_runner.py        <- Parallel EMBOSS needle alignment runner
+│   ├── parse_results.py        <- Parse needle output → structured JSON/DataFrame
+│   └── filter_self.py          <- Apply similarity thresholds → safe peptide list
+│
 └── data/                       <- Generated at runtime (git-ignored)
     ├── robust_df.csv
     ├── all_hla_combinations.pickle
     ├── memoization/
     ├── cd-hit/
-    └── stage2-files/
+    ├── stage2-files/
+    └── needle/                 <- Self-similarity analysis data
+        ├── alignment_results.json
+        ├── chunks/             <- Chunked reference peptidome
+        └── output/             <- Per-peptide needle output files
 ```
