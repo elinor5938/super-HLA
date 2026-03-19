@@ -16,11 +16,19 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_env(os.path.join(BASE_DIR, ".env"))
 
 # Configurable paths with sensible defaults
-DEFAULT_MHC_PATH = "/path/to/netMHCpan-4.2/"
+DEFAULT_MHC_PATH = "/path/to/netMHCpan-4.1/"
 MHC_DIR_PATH = os.environ.get("MHC_DIR_PATH", DEFAULT_MHC_PATH)
-NETMHCPAN_EXECUTABLE = os.path.join(MHC_DIR_PATH, "netMHCpan")
-# Sometimes the executable is called ./netMHCpan or just netMHCpan if it's in the PATH
-# We will verify if we need to call it securely. Actually, we'll just use the absolute path.
+
+# Auto-detect the best executable for the current platform.
+# On arm64 Macs, older netMHCpan versions need platform-specific wrappers.
+def _resolve_executable(install_dir):
+    for wrapper in ("netMHCpan_docker", "netMHCpan_darwin_arm64"):
+        path = os.path.join(install_dir, wrapper)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return os.path.join(install_dir, "netMHCpan")
+
+NETMHCPAN_EXECUTABLE = _resolve_executable(MHC_DIR_PATH)
 
 MCMC_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR_PATH = os.environ.get("INPUT_DIR_PATH", os.path.join(MCMC_DIR, "input"))

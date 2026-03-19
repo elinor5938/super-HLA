@@ -28,7 +28,7 @@ flowchart LR
         F0["Stage 0: Load simulation data<br/>and HLA combination map"]
         F1["Stage 1: CD-HIT clustering<br/>2 rounds at 60 pct similarity"]
         F2["Stage 2: Synthesis filter<br/>Remove difficult-to-make peptides"]
-        F3["Stage 3: MHC cross-validation<br/>netMHCpan + MHCflurry"]
+        F3["Stage 3: MHC cross-validation<br/>netMHCpan 4.1, 4.0, MHCflurry"]
         F0 --> F1 --> F2 --> F3
     end
 
@@ -41,6 +41,25 @@ The MCMC stage stochastically explores peptide space, accepting mutations that i
 
 ---
 
+## Validate Your Setup
+
+Before running anything, check that all prerequisites are in place:
+
+```bash
+python validate_setup.py
+```
+
+This checks Python version, virtual environment, pip packages, `.env` paths, external tools (netMHCpan, cd-hit, Docker, MHCflurry), and reports what's missing. You can also import it programmatically:
+
+```python
+from validate_setup import validate
+report = validate()
+if report["all_ok"]:
+    print("Ready to go!")
+```
+
+---
+
 ## One-Time Setup
 
 ### 1. Python Environment
@@ -48,9 +67,8 @@ The MCMC stage stochastically explores peptide space, accepting mutations that i
 This project requires **Python 3.10+**.
 
 ```bash
-# Create a virtual environment
 python3.10 -m venv .venv
-source .venv/bin/activate        # macOS / Linux
+source .venv/bin/activate
 
 pip install -U pip
 pip install -r requirements.txt
@@ -60,21 +78,68 @@ pip install -r requirements.txt
 
 | Tool | Required by | How to install |
 |------|-------------|----------------|
-| `netMHCpan 4.1` or `4.2` | MCMC + Filtering | [DTU Health Tech](https://services.healthtech.dtu.dk/) (requires registration) |
-| `cd-hit` | Filtering stage 1 | `brew install cd-hit` (macOS) |
-| `netMHCpan 4.0` | Filtering stage 3 (optional) | Same DTU page |
-| `mhcflurry` | Filtering stage 3 (optional) | `pip install mhcflurry && mhcflurry-downloads fetch` |
+| `netMHCpan 4.1` | MCMC + Filtering (primary) | [DTU Health Tech](https://services.healthtech.dtu.dk/) (requires registration) |
+| `netMHCpan 4.0` | Filtering stage 3 (cross-validation) | Same DTU page |
+| `cd-hit` | Filtering stage 1 | `brew install cd-hit` |
+| `mhcflurry` | Filtering stage 3 (cross-validation) | `pip install mhcflurry && mhcflurry-downloads fetch` |
+| `Docker` | macOS only, for netMHCpan 4.0 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
 
-> **Note:** On **Windows**, netMHCpan requires WSL. Open the project inside WSL and use the macOS-style setup above.
+### macOS on Apple Silicon (arm64) -- Platform Notes
+
+netMHCpan versions older than 4.2 do not ship native arm64 macOS binaries. This pipeline handles it automatically with platform-specific wrappers:
+
+| Version | Available binary | Solution |
+|---------|-----------------|----------|
+| **netMHCpan 4.1** | macOS x86_64 | Runs via **Rosetta 2**. A `netMHCpan_darwin_arm64` wrapper script runs the x86_64 binary through `arch -x86_64`. Created automatically during setup. |
+| **netMHCpan 4.0** | Linux x86_64 only | Runs via **Docker**. A `netMHCpan_docker` wrapper script runs the Linux binary inside a lightweight Debian container. Requires Docker Desktop to be running. |
+
+The pipeline auto-detects these wrappers -- if a `netMHCpan_docker` or `netMHCpan_darwin_arm64` script exists in the netMHCpan directory, it is used instead of the default tcsh wrapper.
+
+**Setting up netMHCpan 4.1 on arm64 Mac:**
+
+1. Download `netMHCpan-4.1b.Darwin.tar.gz` from DTU and extract into your netMHCpan-4.1 directory.
+2. Create a `Darwin_arm64` symlink pointing to `Darwin_x86_64`:
+   ```bash
+   cd /path/to/netMHCpan-4.1
+   ln -s Darwin_x86_64 Darwin_arm64
+   ```
+3. Create the Rosetta wrapper (`netMHCpan_darwin_arm64`):
+   ```bash
+   cat > netMHCpan_darwin_arm64 << 'EOF'
+   #!/bin/bash
+   NMHOME="$(cd "$(dirname "$0")" && pwd)"
+   PLATFORM="Darwin_x86_64"
+   export NETMHCpan="$NMHOME/$PLATFORM"
+   /usr/bin/arch -x86_64 "$NETMHCpan/bin/netMHCpan" -rdir "$NETMHCpan" "$@"
+   EOF
+   chmod +x netMHCpan_darwin_arm64
+   ```
+
+**Setting up netMHCpan 4.0 via Docker:**
+
+1. Download `netMHCpan-4.0a.Linux.tar.gz` from DTU and extract.
+2. Download the data files (they are separate):
+   ```bash
+   cd /path/to/netMHCpan-4.0
+   curl -O https://services.healthtech.dtu.dk/services/NetMHCpan-4.0/data.Linux.tar.gz
+   tar -xzf data.Linux.tar.gz
+   ```
+3. Build the Docker image:
+   ```bash
+   docker build --platform linux/amd64 -t netmhcpan40 .
+   ```
+   The `Dockerfile` is included in the netMHCpan-4.0 directory.
+4. The `netMHCpan_docker` wrapper script is also included and will be auto-detected by the pipeline.
+5. Make sure Docker Desktop is running before executing the pipeline.
 
 ### 3. Configure `.env`
 
-Create or edit the `.env` file at the project root. The file ships with commented-out templates for all variables.
+Create or edit the `.env` file at the project root.
 
 **Minimum required for MCMC:**
 
 ```env
-MHC_DIR_PATH=/path/to/netMHCpan-4.2/
+MHC_DIR_PATH=/path/to/netMHCpan-4.1/
 ```
 
 **Additional variables for Filtering** are automatically configured by `prepare_filtering_data.py` (see below), or can be set manually:
@@ -90,7 +155,7 @@ CDHIT_CLUSTER2_INPUT_DIR=/path/to/cd-hit/cluster2/input/
 CDHIT_CLUSTER2_OUTPUT_DIR=/path/to/cd-hit/cluster2/output/
 STAGE2_OUTPUT_DIR=/path/to/stage2-files/
 
-# Optional: for cross-validation in stage 3
+# Cross-validation predictor (stage 3)
 NETMHCPAN_40_DIR_PATH=/path/to/netMHCpan-4.0/
 ```
 
@@ -138,6 +203,7 @@ See [`filtering/README.md`](filtering/README.md) for the filtering flowchart and
 super-HLA/
 ├── .env                        <- All environment variable configuration
 ├── requirements.txt
+├── validate_setup.py           <- Pre-flight check for all prerequisites
 ├── prepare_filtering_data.py   <- Bridges MCMC output to filtering input
 ├── README.md                   <- You are here (setup + big picture)
 │
