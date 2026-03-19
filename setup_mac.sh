@@ -47,6 +47,83 @@ FAILURES=()
 record_failure() { FAILURES+=("$1"); }
 
 # ---------------------------------------------------------------------------
+# Progress helpers — spinner for async ops, progress bar for downloads
+# ---------------------------------------------------------------------------
+_spinner_pid=""
+
+# Start a background spinner with a message
+spin_start() {
+    local msg="$1"
+    printf "  ${BLUE}⏳ %s ...${NC} " "$msg" >&2
+    (
+        local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        local i=0
+        while true; do
+            printf "\b${CYAN}%s${NC}" "${chars:i%${#chars}:1}" >&2
+            i=$((i + 1))
+            sleep 0.1
+        done
+    ) &
+    _spinner_pid=$!
+}
+
+# Stop the spinner and print result
+spin_stop() {
+    local result="${1:-done}"
+    if [ -n "$_spinner_pid" ] && kill -0 "$_spinner_pid" 2>/dev/null; then
+        kill "$_spinner_pid" 2>/dev/null
+        wait "$_spinner_pid" 2>/dev/null || true
+    fi
+    _spinner_pid=""
+    printf "\b \n" >&2
+    if [ "$result" = "ok" ]; then
+        true  # caller prints ok/skip
+    elif [ "$result" = "fail" ]; then
+        true  # caller prints fail
+    fi
+}
+
+# Run a command with a spinner — usage: run_with_spinner "message" command args...
+run_with_spinner() {
+    local msg="$1"
+    shift
+    spin_start "$msg"
+    if "$@" >/dev/null 2>&1; then
+        spin_stop "ok"
+        return 0
+    else
+        spin_stop "fail"
+        return 1
+    fi
+}
+
+# Download with progress bar — usage: download_with_progress URL OUTPUT_FILE
+download_with_progress() {
+    local url="$1"
+    local output="$2"
+    local filename
+    filename=$(basename "$output")
+    # curl with progress bar (not silent)
+    echo -e "  ${BLUE}⬇️  Downloading ${filename}...${NC}" >&2
+    if curl --progress-bar -fL -o "$output" "$url" 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Run find with a scanning animation — usage: search_with_progress "label" find_args...
+search_with_progress() {
+    local label="$1"
+    shift
+    spin_start "Searching ${label}"
+    local result
+    result=$(find "$@" 2>/dev/null | head -1)
+    spin_stop
+    echo "$result"
+}
+
+# ---------------------------------------------------------------------------
 # Helper: load a single variable from .env
 # ---------------------------------------------------------------------------
 _load_env_var() {
@@ -85,14 +162,18 @@ _find_netmhcpan_dir() {
 
     # 3. Search common locations for an existing installation
     local search_dirs=("$HOME" "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop" "$HOME/software" "$HOME/tools")
+    spin_start "Scanning for netMHCpan ${version}" >&2
     for base in "${search_dirs[@]}"; do
+        [ -d "$base" ] || continue
         local found
         found=$(find "$base" -maxdepth 4 -type d -name "netMHCpan-${version}" 2>/dev/null | head -1)
         if [ -n "$found" ]; then
+            spin_stop >&2
             echo "$found"
             return
         fi
     done
+    spin_stop >&2
 
     # 4. Not found — offer to install or ask for path
     echo "" >&2
@@ -225,7 +306,9 @@ _install_netmhcpan_from_tarball() {
     # Search for existing tarball in common download locations
     local tarball=""
     local search_for_tar=("$HOME/Downloads" "$HOME/Desktop" "$HOME/Documents" "$HOME" "$(dirname "$install_parent")")
+    spin_start "Scanning for netMHCpan ${version} tarball" >&2
     for loc in "${search_for_tar[@]}"; do
+        [ -d "$loc" ] || continue
         local found
         found=$(find "$loc" -maxdepth 2 -name "netMHCpan-${version}*.tar.gz" -type f 2>/dev/null | head -1)
         if [ -n "$found" ]; then
@@ -233,6 +316,7 @@ _install_netmhcpan_from_tarball() {
             break
         fi
     done
+    spin_stop >&2
 
     if [ -n "$tarball" ]; then
         echo -e "  ${GREEN}Found tarball: ${tarball}${NC}" >&2
@@ -283,8 +367,7 @@ _install_netmhcpan_from_tarball() {
     fi
 
     # Extract
-    echo -e "  ${BLUE}ℹ️  Extracting to ${install_parent}/...${NC}" >&2
-    tar -xzf "$tarball" -C "$install_parent" 2>/dev/null
+    run_with_spinner "Extracting to ${install_parent}" tar -xzf "$tarball" -C "$install_parent"
 
     # The tarball may extract to a slightly different name (e.g. netMHCpan-4.1b)
     # Find the actual extracted directory
@@ -319,12 +402,12 @@ _install_netmhcpan_from_tarball() {
                 fi
             fi
             if [ -n "$data_tar" ]; then
-                echo -e "  ${BLUE}ℹ️  Extracting data files...${NC}" >&2
-                (cd "$target_dir" && tar -xzf "$(basename "$data_tar")")
+                run_with_spinner "Extracting data files" bash -c "cd '$target_dir' && tar -xzf '$(basename "$data_tar")'"
+                ok "Data files extracted"
             elif [ "$version" = "4.0" ]; then
-                echo -e "  ${BLUE}ℹ️  Downloading netMHCpan 4.0 data files...${NC}" >&2
-                curl -sS -o "$target_dir/data.Linux.tar.gz" "$NETMHCPAN_40_DATA_URL"
-                (cd "$target_dir" && tar -xzf data.Linux.tar.gz)
+                download_with_progress "$NETMHCPAN_40_DATA_URL" "$target_dir/data.Linux.tar.gz"
+                run_with_spinner "Extracting data files" bash -c "cd '$target_dir' && tar -xzf data.Linux.tar.gz"
+                ok "Data files downloaded and extracted"
             fi
         fi
 
@@ -442,24 +525,21 @@ else
     ok "Virtual environment created"
 fi
 
-info "Installing/upgrading pip packages..."
-"$VENV_PIP" install -U pip --quiet 2>/dev/null
-"$VENV_PIP" install -r "$PROJECT_ROOT/requirements.txt" --quiet 2>/dev/null
+run_with_spinner "Upgrading pip" "$VENV_PIP" install -U pip --quiet
+run_with_spinner "Installing pip packages from requirements.txt" "$VENV_PIP" install -r "$PROJECT_ROOT/requirements.txt" --quiet
 ok "Core pip packages installed"
 
 if "$VENV_PYTHON" -c "import mhcflurry" 2>/dev/null; then
     skip "MHCflurry already installed"
 else
-    info "Installing MHCflurry (this may take a minute)..."
-    "$VENV_PIP" install mhcflurry --quiet 2>/dev/null
+    run_with_spinner "Installing MHCflurry (may take a minute)" "$VENV_PIP" install mhcflurry --quiet
     ok "MHCflurry installed"
 fi
 
 if "$VENV_PYTHON" -c "from mhcflurry import Class1AffinityPredictor; Class1AffinityPredictor.load()" 2>/dev/null; then
     skip "MHCflurry models already downloaded"
 else
-    info "Downloading MHCflurry models..."
-    "$VENV_DIR/bin/mhcflurry-downloads" fetch 2>/dev/null
+    run_with_spinner "Downloading MHCflurry models (may take a few minutes)" "$VENV_DIR/bin/mhcflurry-downloads" fetch
     ok "MHCflurry models downloaded"
 fi
 
@@ -506,8 +586,7 @@ _setup_netmhcpan_docker() {
         local linux_tar
         linux_tar=$(find "$(dirname "$dir")" -maxdepth 1 -name "netMHCpan-${version}*.Linux*.tar.gz" 2>/dev/null | head -1)
         if [ -n "$linux_tar" ]; then
-            info "Extracting Linux binaries from $(basename "$linux_tar")..."
-            tar -xzf "$linux_tar" -C "$(dirname "$dir")" --keep-old-files 2>/dev/null || true
+            run_with_spinner "Extracting Linux binaries from $(basename "$linux_tar")" tar -xzf "$linux_tar" -C "$(dirname "$dir")" --keep-old-files
             ok "Linux binaries extracted"
         else
             fail "No Linux binaries found and no Linux tarball in $(dirname "$dir")"
@@ -523,17 +602,14 @@ _setup_netmhcpan_docker() {
     data_count=$(find "$dir/data" -type f 2>/dev/null | wc -l | tr -d ' ')
     if [ "$data_count" -lt 100 ]; then
         if [ -f "$dir/data.tar.gz" ]; then
-            info "Extracting data files ($data_count found, need more)..."
-            (cd "$dir" && tar -xzf data.tar.gz)
+            run_with_spinner "Extracting data files ($data_count found, need more)" bash -c "cd '$dir' && tar -xzf data.tar.gz"
             ok "Data files extracted"
         elif [ -f "$dir/data.Linux.tar.gz" ]; then
-            info "Extracting data files..."
-            (cd "$dir" && tar -xzf data.Linux.tar.gz)
+            run_with_spinner "Extracting data files" bash -c "cd '$dir' && tar -xzf data.Linux.tar.gz"
             ok "Data files extracted"
         elif [ "$version" = "4.0" ]; then
-            info "Downloading netMHCpan 4.0 data files (~25 MB)..."
-            curl -sS -o "$dir/data.Linux.tar.gz" "$NETMHCPAN_40_DATA_URL"
-            (cd "$dir" && tar -xzf data.Linux.tar.gz)
+            download_with_progress "$NETMHCPAN_40_DATA_URL" "$dir/data.Linux.tar.gz"
+            run_with_spinner "Extracting data files" bash -c "cd '$dir' && tar -xzf data.Linux.tar.gz"
             ok "Data files downloaded and extracted"
         else
             fail "Data directory incomplete and no data tarball found"
@@ -603,8 +679,7 @@ WRAPPER
         skip "Docker image '$image_name' already built"
     else
         if docker info &>/dev/null; then
-            info "Building Docker image '$image_name' (this may take a minute)..."
-            (cd "$dir" && docker build --platform linux/amd64 -t "$image_name" . --quiet 2>/dev/null)
+            run_with_spinner "Building Docker image '$image_name' (may take a few minutes)" bash -c "cd '$dir' && docker build --platform linux/amd64 -t '$image_name' . --quiet"
             ok "Docker image '$image_name' built"
         else
             fail "Cannot build image — Docker daemon not running"
