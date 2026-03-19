@@ -182,21 +182,11 @@ def run_stage3(filtered_peptides: list) -> dict:
             print(f"[Stage 3] Cross-predictor overlap: {len(shared)}/{len(union)} peptides shared across {', '.join(predictor_names)}")
     sys.stdout.flush()
 
-    # ---- List final peptides ----
-    final_peptides = list(scores_df.index)
+    # ---- Summary ----
     n_total = len(filtered_peptides)
     if n_total <= TOP_N_PEPTIDES:
         print(f"[Stage 3] Note: only {n_total} peptides in input (< {TOP_N_PEPTIDES} cutoff), so ALL pass cross-validation")
-    print(f"[Stage 3] Final {len(final_peptides)} validated peptides:")
-    for pep in final_peptides:
-        score_parts = []
-        if "one_side_mean_primary" in scores_df.columns:
-            score_parts.append(f"primary={scores_df.at[pep, 'one_side_mean_primary']:.4f}")
-        if "one_side_mean_net40" in scores_df.columns:
-            score_parts.append(f"net4.0={scores_df.at[pep, 'one_side_mean_net40']:.4f}")
-        if "one_side_mean_flurry" in scores_df.columns:
-            score_parts.append(f"flurry={scores_df.at[pep, 'one_side_mean_flurry']:.4f}")
-        print(f"[Stage 3]   {pep}  ({', '.join(score_parts)})")
+    print(f"[Stage 3] Final validated peptides: {len(scores_df)}")
     sys.stdout.flush()
 
     result["scores_df"] = scores_df
