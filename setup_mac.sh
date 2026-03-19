@@ -19,9 +19,27 @@
 # detected and skipped.
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: we do NOT use set -e because many commands are expected to fail
+# (searches, optional tools, smoke tests). We handle errors explicitly.
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# ---------------------------------------------------------------------------
+# Error trap — show what went wrong if the script exits unexpectedly
+# ---------------------------------------------------------------------------
+_last_command=""
+trap '_last_command=$BASH_COMMAND' DEBUG
+trap '
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "" >&2
+        echo -e "\033[0;31m❌ Script exited unexpectedly (exit code $exit_code)\033[0m" >&2
+        echo -e "\033[0;31m   Last command: $_last_command\033[0m" >&2
+        echo -e "\033[2m   If this looks like a bug, re-run with: bash -x setup_mac.sh\033[0m" >&2
+        [ -n "${_spinner_pid:-}" ] && kill "$_spinner_pid" 2>/dev/null || true
+    fi
+' EXIT
 NETMHCPAN_40_DATA_URL="https://services.healthtech.dtu.dk/services/NetMHCpan-4.0/data.Linux.tar.gz"
 
 # ---------------------------------------------------------------------------
@@ -88,13 +106,10 @@ run_with_spinner() {
     local msg="$1"
     shift
     spin_start "$msg"
-    if "$@" >/dev/null 2>&1; then
-        spin_stop "ok"
-        return 0
-    else
-        spin_stop "fail"
-        return 1
-    fi
+    local rc=0
+    "$@" >/dev/null 2>&1 || rc=$?
+    spin_stop
+    return $rc
 }
 
 # Download with progress bar — usage: download_with_progress URL OUTPUT_FILE
@@ -103,11 +118,9 @@ download_with_progress() {
     local output="$2"
     local filename
     filename=$(basename "$output")
-    # curl with progress bar (not silent)
     echo -e "  ${BLUE}⬇️  Downloading ${filename}...${NC}" >&2
-    if curl --progress-bar -fL -o "$output" "$url" 2>&1; then
-        return 0
-    else
+    if ! curl --progress-bar -fL -o "$output" "$url" 2>&1; then
+        fail "Download failed: $url"
         return 1
     fi
 }
@@ -713,7 +726,7 @@ WRAPPER
 # Step 5: netMHCpan 4.1
 # ---------------------------------------------------------------------------
 step "Step 5/8: netMHCpan 4.1 (primary predictor)"
-_setup_netmhcpan_docker "4.1" "$NETMHCPAN_41_DIR" "netmhcpan41" "netMHCpan 4.1"
+_setup_netmhcpan_docker "4.1" "$NETMHCPAN_41_DIR" "netmhcpan41" "netMHCpan 4.1" || true
 
 # ---------------------------------------------------------------------------
 # Step 6: netMHCpan 4.0
@@ -734,7 +747,7 @@ if [ -z "$NETMHCPAN_40_DIR" ]; then
 fi
 
 if [ -n "$NETMHCPAN_40_DIR" ]; then
-    _setup_netmhcpan_docker "4.0" "$NETMHCPAN_40_DIR" "netmhcpan40" "netMHCpan 4.0"
+    _setup_netmhcpan_docker "4.0" "$NETMHCPAN_40_DIR" "netmhcpan40" "netMHCpan 4.0" || true
 else
     warn "Skipping netMHCpan 4.0 — not found. Stage 3 cross-validation will use only MHCflurry."
 fi
