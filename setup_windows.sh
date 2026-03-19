@@ -772,7 +772,20 @@ if [ -z "$HUMAN_9MERS" ]; then
     done
 fi
 if [ -z "$HUMAN_9MERS" ]; then
-    info "Human 9-mer peptidome not found (set HUMAN_9MERS_FASTA in .env if available)"
+    warn "Human 9-mer peptidome (noncoding_9mers.fasta) NOT FOUND"
+    info "This file is REQUIRED for stage 4 (self-similarity analysis)."
+    info "It contains the full human proteome chopped into 9-mer peptides (~16 GB)."
+    printf "    Enter the path to noncoding_9mers.fasta (or press Enter to skip): "
+    read -r user_path
+    if [ -n "$user_path" ] && [ -f "$user_path" ]; then
+        HUMAN_9MERS="$user_path"
+        ok "Human 9-mer peptidome set to: $HUMAN_9MERS"
+    elif [ -n "$user_path" ]; then
+        fail "File not found: $user_path"
+        info "You can set HUMAN_9MERS_FASTA manually in .env later."
+    else
+        info "Skipped. Stage 4 will not be available until HUMAN_9MERS_FASTA is set in .env"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

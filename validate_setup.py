@@ -340,13 +340,17 @@ def validate() -> dict:
             add("Self-similarity", "Pre-computed alignments", False,
                 "Not found (will need to run needle — very slow)", required=False)
 
-    # Check for human 9-mer peptidome (not required if pre-computed results exist)
+    # Check for human 9-mer peptidome (required for stage 4)
     human_9mers = os.environ.get("HUMAN_9MERS_FASTA", "")
     if human_9mers and os.path.isfile(human_9mers):
-        add("Self-similarity", "Human 9-mer peptidome", True, human_9mers, required=False)
+        file_size_gb = os.path.getsize(human_9mers) / (1024**3)
+        add("Self-similarity", "Human 9-mer peptidome (HUMAN_9MERS_FASTA)", True,
+            f"{human_9mers} ({file_size_gb:.1f} GB)", required=True)
     else:
-        add("Self-similarity", "Human 9-mer peptidome", False,
-            "Not set (needed only for fresh needle runs)", required=False)
+        add("Self-similarity", "Human 9-mer peptidome (HUMAN_9MERS_FASTA)", False,
+            "REQUIRED for stage 4. Set HUMAN_9MERS_FASTA in .env to the path of "
+            "noncoding_9mers.fasta (human proteome chopped to 9-mers, ~16 GB)",
+            required=True)
 
     # ── Compute summary flags ─────────────────────────────────────────────
     def _all_ok(categories):

@@ -127,6 +127,7 @@ pip install -U pip && pip install -r requirements.txt
 | `mhcflurry` | Filtering stage 3 | `pip install mhcflurry && mhcflurry-downloads fetch` | Same |
 | `Docker` | macOS, for netMHCpan | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Not needed (WSL used instead) |
 | `needle` (EMBOSS) | Self-similarity | `brew install emboss` | `wsl sudo apt install emboss` |
+| `noncoding_9mers.fasta` | Self-similarity (stage 4) | Human proteome chopped to 9-mers (~16 GB) | Same file, set `HUMAN_9MERS_FASTA` in `.env` |
 | `WSL` | Windows only | N/A | `wsl --install` (as Administrator) |
 
 ### macOS on Apple Silicon (arm64) -- Platform Notes
@@ -216,8 +217,8 @@ STAGE2_OUTPUT_DIR=/path/to/stage2-files/
 # Cross-validation predictor (stage 3)
 NETMHCPAN_40_DIR_PATH=/path/to/netMHCpan-4.0/
 
-# Self-similarity analysis (optional — paths auto-configured by setup_mac.sh)
-HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta
+# Self-similarity analysis (stage 4) — REQUIRED for running stage 4
+HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta  # Human proteome 9-mers (~16 GB)
 # HUMAN_PROTEOME_FASTA=/path/to/human_proteome.fasta  # Only if generating 9-mers from scratch
 ```
 
@@ -286,15 +287,23 @@ Check that candidate peptides are not too similar to naturally occurring human p
 python -m self_similarity.main
 ```
 
-This uses EMBOSS `needle` (Needleman-Wunsch global alignment) to compare each candidate 9-mer peptide against the human proteome. Peptides with high similarity or identity to self are removed.
+This uses EMBOSS `needle` (Needleman-Wunsch global alignment) to compare each candidate 9-mer peptide from stage 3 against all 9-mers from the human proteome. Peptides with high similarity or identity to human self-peptides are removed — a critical safety check for vaccine/immunotherapy applications.
 
-**Using pre-computed results:** If you already have an `alignment_results.json` (from a previous run on a server), place it at `data/needle/alignment_results.json` or pass it directly:
+**Required data file:** `noncoding_9mers.fasta` — the full human proteome chopped into overlapping 9-mer peptides (~16 GB, ~149M sequences). Set the path in `.env`:
+
+```env
+HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta
+```
+
+This file is the reference that candidate peptides are compared against. Without it, stage 4 cannot run.
+
+**Using pre-computed results:** If you already have an `alignment_results.json` (from a previous run), place it at `data/needle/alignment_results.json` or pass it directly. Note: pre-computed results must match your current candidates — stale results from a different set of peptides will be detected and skipped.
 
 ```bash
 python -m self_similarity.main --precomputed /path/to/alignment_results.json
 ```
 
-**Running fresh:** Fresh needle alignments require a reference peptidome (`HUMAN_9MERS_FASTA` — all 9-mers from the human proteome, ~16 GB). This is extremely compute-intensive and may take hours/days. Pre-computed results are strongly preferred.
+**Running fresh:** Fresh needle alignments are compute-intensive (each candidate is aligned against all ~149M human 9-mers). For a small number of candidates (e.g. 7) this takes minutes; for hundreds it can take hours/days.
 
 See [`self_similarity/README.md`](self_similarity/README.md) for full details.
 
