@@ -641,23 +641,48 @@ _setup_netmhcpan_native() {
     # --- Data symlink inside Linux_x86_64 ---
     ln -sf "$dir/data" "$dir/Linux_x86_64/data" 2>/dev/null || true
 
-    # --- Create a bash wrapper that runs the Linux binary directly ---
-    local wrapper_path="$dir/netMHCpan_wsl"
-    if [ -f "$wrapper_path" ] && [ -x "$wrapper_path" ]; then
-        skip "WSL wrapper script exists"
-    else
-        info "Creating native WSL wrapper script..."
-        cat > "$wrapper_path" << 'WRAPPER'
-#!/bin/bash
-# Native WSL wrapper for netMHCpan — runs Linux binary directly (no Docker)
-NMHOME="$(cd "$(dirname "$0")" && pwd)"
-export NETMHCpan="$NMHOME/Linux_x86_64"
-export TMPDIR="${TMPDIR:-/tmp}"
-exec "$NETMHCpan/bin/netMHCpan" "$@"
-WRAPPER
-        chmod +x "$wrapper_path"
-        ok "WSL wrapper created"
+    # --- Patch the netMHCpan tcsh script to use local NMHOME ---
+    local tcsh_script="$dir/netMHCpan"
+    if [ -f "$tcsh_script" ]; then
+        if grep -q '/net/sund-nas.win.dtu.dk\|/services/www/packages' "$tcsh_script" 2>/dev/null; then
+            info "Patching netMHCpan tcsh script with local installation path..."
+            # Replace the hardcoded DTU NMHOME with the actual local directory
+            sed -i "s|setenv\tNMHOME.*|setenv\tNMHOME\t$dir|" "$tcsh_script"
+            # Also fix any variant with spaces instead of tabs
+            sed -i "s|setenv  *NMHOME  *.*|setenv\tNMHOME\t$dir|" "$tcsh_script"
+            ok "Patched netMHCpan script NMHOME → $dir"
+        else
+            skip "netMHCpan tcsh script already patched"
+        fi
     fi
+
+    # --- Create a bash wrapper that runs netMHCpan via tcsh ---
+    local wrapper_path="$dir/netMHCpan_wsl"
+    # Always recreate the wrapper to ensure it's up to date
+    info "Creating native WSL wrapper script..."
+    cat > "$wrapper_path" << 'WRAPPER'
+#!/bin/bash
+# Native WSL wrapper for netMHCpan — runs via patched tcsh script
+NMHOME="$(cd "$(dirname "$0")" && pwd)"
+export TMPDIR="${TMPDIR:-/tmp}"
+mkdir -p "$TMPDIR" 2>/dev/null || true
+
+# Use the patched tcsh script (most reliable — handles all env vars)
+if command -v tcsh >/dev/null 2>&1 && [ -f "$NMHOME/netMHCpan" ]; then
+    exec tcsh "$NMHOME/netMHCpan" "$@"
+fi
+
+# Fallback: run Linux binary directly
+export NETMHCpan="$NMHOME/Linux_x86_64"
+if [ -x "$NETMHCpan/bin/netMHCpan" ]; then
+    exec "$NETMHCpan/bin/netMHCpan" "$@"
+fi
+
+echo "ERROR: Cannot find netMHCpan binary or tcsh script in $NMHOME" >&2
+exit 1
+WRAPPER
+    chmod +x "$wrapper_path"
+    ok "WSL wrapper created"
 
     # --- Smoke test (with timeout + spinner) ---
     local test_fasta
