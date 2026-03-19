@@ -703,22 +703,31 @@ WRAPPER
 
     # --- Smoke test ---
     if docker image inspect "$image_name" &>/dev/null && docker info &>/dev/null; then
-        local test_fasta
+        local test_fasta smoke_output_file
         test_fasta=$(mktemp /tmp/superhla_test_XXXXXX.fasta)
+        smoke_output_file=$(mktemp /tmp/superhla_smoke_XXXXXX.txt)
         echo -e ">test\nAYFKGVLAA" > "$test_fasta"
 
         spin_start "$label smoke test (may take up to 60s on first run)"
-        local smoke_output=""
-        smoke_output=$(timeout 120 "$dir/netMHCpan_docker" -f "$test_fasta" -l 9 -a HLA-A01:01 2>/dev/null || true)
+        # Run with background process + wait (macOS has no timeout command)
+        "$dir/netMHCpan_docker" -f "$test_fasta" -l 9 -a HLA-A01:01 > "$smoke_output_file" 2>/dev/null &
+        local smoke_pid=$!
+        local waited=0
+        while kill -0 "$smoke_pid" 2>/dev/null && [ $waited -lt 120 ]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        kill "$smoke_pid" 2>/dev/null || true
+        wait "$smoke_pid" 2>/dev/null || true
         spin_stop
 
-        if echo "$smoke_output" | grep -q "HLA-A"; then
+        if grep -q "HLA-A" "$smoke_output_file" 2>/dev/null; then
             ok "$label smoke test passed"
         else
             fail "$label smoke test failed (timed out or no output)"
             record_failure "$label smoke test"
         fi
-        rm -f "$test_fasta"
+        rm -f "$test_fasta" "$smoke_output_file"
     fi
 }
 
