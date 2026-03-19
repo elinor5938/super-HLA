@@ -170,14 +170,15 @@ def run_self_similarity(
         print(f"  Saved parsed results to: {precomputed or ALIGNMENT_RESULTS_JSON}")
     else:
         # Need to run needle from scratch
-        print("\n  No pre-computed results found. Running needle alignments...")
-        print("  WARNING: This is extremely compute-intensive and may take hours/days.")
+        print(f"\n  [Step 2] No pre-computed results found — will run EMBOSS needle alignments")
+        print(f"  [Step 2] This aligns each candidate peptide against all human proteome 9-mers")
+        print(f"  [Step 2] to find candidates that are too similar to human self-peptides")
 
-        # Check prerequisites
-        if not os.path.isdir(NEEDLE_CHUNKS_DIR) or not any(
+        # Check prerequisites — prepare reference chunks if needed
+        need_chunks = not os.path.isdir(NEEDLE_CHUNKS_DIR) or not any(
             f.endswith(".fasta") for f in os.listdir(NEEDLE_CHUNKS_DIR)
-        ):
-            # Need to prepare chunks
+        )
+        if need_chunks:
             if not HUMAN_9MERS_FASTA or not os.path.isfile(HUMAN_9MERS_FASTA):
                 if not HUMAN_PROTEOME_FASTA or not os.path.isfile(HUMAN_PROTEOME_FASTA):
                     raise FileNotFoundError(
@@ -186,38 +187,51 @@ def run_self_similarity(
                         "HUMAN_PROTEOME_FASTA (full proteome) in .env.\n"
                         "Or provide pre-computed results via --precomputed."
                     )
-                print("  Chopping proteome into 9-mers (this may take a while)...")
+                print(f"\n  [Step 2a] Chopping full human proteome into 9-mers...")
+                print(f"            Source: {HUMAN_PROTEOME_FASTA}")
                 from self_similarity.chopper import chop_fasta_to_9mers, split_fasta_into_chunks
 
                 ninemer_path = HUMAN_9MERS_FASTA or os.path.join(
                     _PROJECT_ROOT, "data", "needle", "human_9mers.fasta"
                 )
                 n_kmers = chop_fasta_to_9mers(HUMAN_PROTEOME_FASTA, ninemer_path)
-                print(f"  Wrote {n_kmers:,} 9-mers.")
+                print(f"            Wrote {n_kmers:,} 9-mers to {ninemer_path}")
 
-                print("  Splitting into chunks...")
-                split_fasta_into_chunks(ninemer_path, NEEDLE_CHUNKS_DIR)
+                print(f"  [Step 2a] Splitting 9-mers into chunks for parallel processing...")
+                chunks = split_fasta_into_chunks(ninemer_path, NEEDLE_CHUNKS_DIR)
+                print(f"            Created {len(chunks)} chunk files in {NEEDLE_CHUNKS_DIR}")
             else:
-                print("  Splitting 9-mer FASTA into chunks...")
+                file_size = os.path.getsize(HUMAN_9MERS_FASTA) / (1024**3)
+                print(f"\n  [Step 2a] Splitting human 9-mer FASTA into chunks for parallel processing...")
+                print(f"            Source: {HUMAN_9MERS_FASTA} ({file_size:.1f} GB)")
+                print(f"            Output: {NEEDLE_CHUNKS_DIR}")
                 from self_similarity.chopper import split_fasta_into_chunks
-                split_fasta_into_chunks(HUMAN_9MERS_FASTA, NEEDLE_CHUNKS_DIR)
+                chunks = split_fasta_into_chunks(HUMAN_9MERS_FASTA, NEEDLE_CHUNKS_DIR)
+                print(f"            Created {len(chunks)} chunk files")
+        else:
+            n_chunks = len([f for f in os.listdir(NEEDLE_CHUNKS_DIR) if f.endswith(".fasta")])
+            print(f"\n  [Step 2a] Reference chunks ready: {n_chunks} files in {NEEDLE_CHUNKS_DIR}")
 
         # Write candidate FASTA for reference
         _write_peptides_fasta(pep_dict, CANDIDATE_PEPTIDES_FASTA)
 
-        # Run needle
+        # Run needle alignments
         from self_similarity.needle_runner import run_needle_alignments
         run_needle_alignments(pep_dict)
 
-        # Parse results
+        # Parse needle output files into structured alignments
+        print(f"\n  [Step 2c] Parsing needle output files from {NEEDLE_OUTPUT_DIR}...")
         alignments = parse_all_needle_outputs(NEEDLE_OUTPUT_DIR)
+        print(f"            Found {len(alignments):,} high-identity alignments")
 
-        # Enrich and save
+        # Enrich with actual sequences from reference chunks
         if os.path.isdir(NEEDLE_CHUNKS_DIR):
+            print(f"  [Step 2c] Enriching alignments with reference sequences...")
             fasta_index = load_fasta_index_from_chunks(NEEDLE_CHUNKS_DIR)
             alignments = enrich_with_sequences(alignments, fasta_index)
 
         save_alignment_results(alignments, ALIGNMENT_RESULTS_JSON)
+        print(f"  [Step 2c] Saved alignment results to {ALIGNMENT_RESULTS_JSON}")
 
     if not alignments:
         print("\n  No alignments found — all peptides considered safe.")

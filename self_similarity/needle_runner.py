@@ -180,28 +180,57 @@ def run_needle_alignments(
     if not chunk_paths:
         raise FileNotFoundError(f"No .fasta chunk files found in {chunks_dir}")
 
-    print(f"  Needle: {len(peptides)} peptides x {len(chunk_paths)} chunks, "
-          f"{workers} workers")
+    total_alignments = len(peptides) * len(chunk_paths)
+    print(f"  [Step 2b] Needle alignment plan:")
+    print(f"            Candidates:  {len(peptides)} peptides")
+    print(f"            Reference:   {len(chunk_paths)} chunks")
+    print(f"            Total runs:  {total_alignments:,} (each peptide vs each chunk)")
+    print(f"            Workers:     {workers} parallel processes")
+    print(f"            Output dir:  {output_dir}")
+    sys.stdout.flush()
 
     # Skip peptides that already have output files (resume support)
     tasks = []
     output_paths = []
+    cached_count = 0
     for pep_name, pep_seq in peptides.items():
         out_path = os.path.join(output_dir, f"needle-{pep_name}.txt")
         output_paths.append(out_path)
         if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
+            cached_count += 1
             continue  # already computed
         tasks.append((pep_name, pep_seq, chunk_paths, needle_bin))
 
     if not tasks:
-        print("  All needle results already exist -- skipping.")
+        print(f"  [Step 2b] All {len(peptides)} peptide results already cached — skipping needle.")
         return output_paths
 
-    print(f"  Running needle for {len(tasks)} peptides ({len(peptides) - len(tasks)} cached)...")
+    if cached_count > 0:
+        print(f"  [Step 2b] {cached_count} peptides already cached, {len(tasks)} remaining to compute")
+    print(f"  [Step 2b] Running needle for {len(tasks)} peptides ({len(tasks) * len(chunk_paths):,} alignments)...")
+    print(f"            This may take a while — each peptide is aligned against all {len(chunk_paths)} chunks")
+    sys.stdout.flush()
 
-    # Run in parallel
+    import time as _time
+    t_start = _time.time()
+
+    # Run in parallel with progress tracking
+    completed = 0
+    results = []
     with Pool(processes=workers) as pool:
-        results = pool.map(_run_needle_for_peptide, tasks)
+        for result in pool.imap_unordered(_run_needle_for_peptide, tasks):
+            completed += 1
+            elapsed = _time.time() - t_start
+            avg_per_pep = elapsed / completed
+            remaining = avg_per_pep * (len(tasks) - completed)
+            print(f"  [Step 2b] Peptide {completed}/{len(tasks)} done: {result['name']} "
+                  f"({elapsed:.0f}s elapsed, ~{remaining:.0f}s remaining)")
+            sys.stdout.flush()
+            results.append(result)
+
+    elapsed = _time.time() - t_start
+    print(f"  [Step 2b] All {len(tasks)} peptides aligned in {elapsed:.1f}s")
+    sys.stdout.flush()
 
     # Write output files
     for res in results:
