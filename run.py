@@ -147,101 +147,140 @@ def _update_stage_state(stage_id: int, status: str, details: str = "") -> None:
 # ---------------------------------------------------------------------------
 def _detect_stage_status() -> dict:
     """Auto-detect pipeline status from files on disk."""
+    import re
+
     status = {}
 
     # Stage 1: MCMC — check for output CSVs
     mcmc_csvs = []
     if os.path.isdir(MCMC_OUTPUT_DIR):
-        mcmc_csvs = [f for f in os.listdir(MCMC_OUTPUT_DIR) if f.endswith(".csv")]
+        mcmc_csvs = sorted(f for f in os.listdir(MCMC_OUTPUT_DIR) if f.endswith(".csv"))
     if mcmc_csvs:
-        # Parse seed and accepted from filenames like "seed1_acc100.csv"
-        import re
         descriptions = []
-        for f in sorted(mcmc_csvs):
+        for f in mcmc_csvs:
             m = re.match(r"seed(\d+)_acc(\d+)\.csv", f)
             if m:
                 descriptions.append(f"seed={m.group(1)},acc={m.group(2)}")
             else:
                 descriptions.append(f.removesuffix(".csv"))
         desc_str = ", ".join(descriptions[:5]) + ("..." if len(descriptions) > 5 else "")
+        files = [os.path.join(MCMC_OUTPUT_DIR, f) for f in mcmc_csvs]
         status[1] = {
             "complete": True,
             "details": f"{len(mcmc_csvs)} run(s): {desc_str}",
+            "files": files,
         }
     else:
-        status[1] = {"complete": False, "details": "No MCMC output CSVs found"}
+        status[1] = {"complete": False, "details": "No MCMC output CSVs found", "files": []}
 
     # Stage 2: Prepare — check for robust_df.csv and pickle
     robust_csv = os.path.join(DATA_DIR, "robust_df.csv")
     hla_pickle = os.path.join(DATA_DIR, "all_hla_combinations.pickle")
     if os.path.isfile(robust_csv) and os.path.isfile(hla_pickle):
-        import pandas as pd
         try:
-            df = pd.read_csv(robust_csv, nrows=0)
             row_count = sum(1 for _ in open(robust_csv)) - 1
             with open(hla_pickle, "rb") as f:
                 combos = pickle.load(f)
             status[2] = {
                 "complete": True,
                 "details": f"{row_count} peptides, {len(combos)} HLA combinations",
+                "files": [
+                    f"{robust_csv}  ({row_count} peptides)",
+                    f"{hla_pickle}  ({len(combos)} HLA combos)",
+                ],
             }
         except Exception:
-            status[2] = {"complete": True, "details": "Files exist"}
+            status[2] = {"complete": True, "details": "Files exist", "files": [robust_csv, hla_pickle]}
     else:
-        status[2] = {"complete": False, "details": "robust_df.csv or HLA pickle missing"}
+        missing = []
+        if not os.path.isfile(robust_csv):
+            missing.append("robust_df.csv")
+        if not os.path.isfile(hla_pickle):
+            missing.append("HLA pickle")
+        status[2] = {"complete": False, "details": f"Missing: {', '.join(missing)}", "files": []}
 
-    # Stage 3: Filtering — check for memoized stage results or stage2 output
+    # Stage 3: Filtering
     stage2_dir = os.environ.get("STAGE2_OUTPUT_DIR", os.path.join(DATA_DIR, "stage2-files"))
     memoization_dir = os.environ.get("MEMOIZATION_DIR", os.path.join(DATA_DIR, "memoization"))
 
-    # Count memoized stage pickles (stored in subdirectories like stage-0/, stage-1/, etc.)
+    stage3_files = []
+    stage3_details_parts = []
+
+    # Check candidate_peptides.fasta (final output)
+    candidate_fasta = os.path.join(stage2_dir, "candidate_peptides.fasta")
+    if os.path.isfile(candidate_fasta):
+        n_candidates = sum(1 for line in open(candidate_fasta) if line.startswith(">"))
+        stage3_files.append(f"{candidate_fasta}  ({n_candidates} candidates)")
+        stage3_details_parts.append(f"{n_candidates} final candidates")
+
+    # Check synthesis filter output
+    synth_fasta = os.path.join(stage2_dir, "result_no_triple.fasta")
+    if os.path.isfile(synth_fasta):
+        n_synth = sum(1 for line in open(synth_fasta) if line.startswith(">"))
+        stage3_files.append(f"{synth_fasta}  ({n_synth} synthesis-feasible)")
+
+    # Check memoization stages
     memo_stages = []
     if os.path.isdir(memoization_dir):
         for entry in sorted(os.listdir(memoization_dir)):
             sub = os.path.join(memoization_dir, entry)
             if os.path.isdir(sub) and entry.startswith("stage"):
-                memo_stages.append(entry)
+                n_pickles = len([f for f in os.listdir(sub) if f.endswith(".pickle")])
+                memo_stages.append(f"{entry} ({n_pickles} cached)")
+                stage3_files.append(f"{sub}/  ({n_pickles} pickle files)")
 
-    stage2_files = []
-    if os.path.isdir(stage2_dir):
-        stage2_files = [f for f in os.listdir(stage2_dir)
-                        if f.endswith((".csv", ".fasta"))]
+    if memo_stages:
+        stage3_details_parts.append(f"cache: {', '.join(memo_stages)}")
 
-    if memo_stages or stage2_files:
-        parts = []
-        if memo_stages:
-            parts.append(f"memoized: {', '.join(memo_stages)}")
-        if stage2_files:
-            parts.append(f"{len(stage2_files)} stage-2 output(s)")
-        status[3] = {"complete": True, "details": ", ".join(parts)}
+    if stage3_details_parts:
+        status[3] = {"complete": True, "details": ", ".join(stage3_details_parts), "files": stage3_files}
     else:
-        status[3] = {"complete": False, "details": "No filtering outputs found"}
+        status[3] = {"complete": False, "details": "No filtering outputs found", "files": []}
 
     # Stage 4: Self-similarity
     needle_dir = os.path.join(DATA_DIR, "needle")
     summary_json = os.path.join(needle_dir, "self_similarity_summary.json")
+    human_9mers = os.environ.get("HUMAN_9MERS_FASTA", "")
+
+    stage4_files = []
+    if human_9mers and os.path.isfile(human_9mers):
+        size_gb = os.path.getsize(human_9mers) / (1024**3)
+        stage4_files.append(f"{human_9mers}  (reference, {size_gb:.1f} GB)")
+    else:
+        stage4_files.append("HUMAN_9MERS_FASTA: NOT SET (required)")
+
     if os.path.isfile(summary_json):
         try:
             with open(summary_json) as f:
                 summary = json.load(f)
             safe = summary.get("safe_count", "?")
             removed = summary.get("removed_count", "?")
+            stage4_files.append(f"{summary_json}")
+
+            safe_fasta = os.path.join(needle_dir, "safe_peptides.fasta")
+            if os.path.isfile(safe_fasta):
+                stage4_files.append(f"{safe_fasta}  ({safe} safe peptides)")
+            removed_txt = os.path.join(needle_dir, "removed_self_similar.txt")
+            if os.path.isfile(removed_txt):
+                stage4_files.append(f"{removed_txt}  ({removed} removed)")
+
             status[4] = {
                 "complete": True,
                 "details": f"{safe} safe, {removed} removed",
+                "files": stage4_files,
             }
         except Exception:
-            status[4] = {"complete": True, "details": "Summary exists"}
+            status[4] = {"complete": True, "details": "Summary exists", "files": stage4_files}
     else:
-        # Check if pre-computed alignments are available
         alignment_json = os.environ.get(
             "ALIGNMENT_RESULTS_JSON",
             os.path.join(needle_dir, "alignment_results.json"),
         )
         if os.path.isfile(alignment_json):
-            status[4] = {"complete": False, "details": "Pre-computed alignments ready, not yet analyzed"}
+            stage4_files.append(f"{alignment_json}  (pre-computed)")
+            status[4] = {"complete": False, "details": "Pre-computed alignments ready, not yet analyzed", "files": stage4_files}
         else:
-            status[4] = {"complete": False, "details": "No alignment data found"}
+            status[4] = {"complete": False, "details": "No alignment data found", "files": stage4_files}
 
     return status
 
@@ -296,6 +335,10 @@ def print_status():
             detail_text = f"Started at {saved_stage['timestamp']}"
         if detail_text:
             print(f"       {DIM}\u2514\u2500 {detail_text}{RESET}")
+
+        # File paths
+        for fpath in det.get("files", []):
+            print(f"       {DIM}   {fpath}{RESET}")
         print()
 
     _print_divider()
