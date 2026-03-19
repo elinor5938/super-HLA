@@ -436,22 +436,30 @@ def _run_subprocess_streamed(cmd: list, cwd: str = None, timeout: int = 3600) ->
 
     t_start = time.time()
     try:
-        for line in proc.stdout:
+        # Use readline() instead of iterator — the iterator buffers internally
+        # and won't yield lines until the buffer is full, even with bufsize=1.
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                break
             stdout_lines.append(line)
             stripped = line.rstrip("\n")
             # Color-code output lines
-            if stripped.startswith("[Stage") or stripped.startswith("  [MCMC") or stripped.startswith("="):
-                print(f"    {CYAN}{stripped}{RESET}")
+            if stripped.startswith("[Stage") or stripped.startswith("  [MCMC") or stripped.startswith("=") or stripped.startswith("  [Step"):
+                print(f"    {CYAN}{stripped}{RESET}", flush=True)
             elif "Done" in stripped or "complete" in stripped.lower() or "passed" in stripped.lower():
-                print(f"    {GREEN}{stripped}{RESET}")
+                print(f"    {GREEN}{stripped}{RESET}", flush=True)
             elif "WARNING" in stripped or "failed" in stripped.lower() or "ERROR" in stripped:
-                print(f"    {YELLOW}{stripped}{RESET}")
+                print(f"    {YELLOW}{stripped}{RESET}", flush=True)
             elif "ACCEPTED" in stripped:
-                print(f"    {GREEN}{stripped}{RESET}")
+                print(f"    {GREEN}{stripped}{RESET}", flush=True)
+            elif "\u2588" in stripped or "\u2591" in stripped:
+                # Progress bar lines
+                print(f"    {CYAN}{stripped}{RESET}", flush=True)
             elif stripped.startswith("  "):
-                print(f"    {DIM}{stripped}{RESET}")
+                print(f"    {DIM}{stripped}{RESET}", flush=True)
             else:
-                print(f"    {stripped}")
+                print(f"    {stripped}", flush=True)
             # Check timeout
             if time.time() - t_start > timeout:
                 proc.kill()
