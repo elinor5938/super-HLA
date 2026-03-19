@@ -58,11 +58,7 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# Helper: resolve a netMHCpan directory
-#   1. Use env var if set
-#   2. Check existing .env
-#   3. Search common Windows locations via /mnt/c/
-#   4. Prompt the user
+# Helper: load a single variable from .env
 # ---------------------------------------------------------------------------
 _load_env_var() {
     local var_name="$1"
@@ -72,6 +68,13 @@ _load_env_var() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Helper: resolve a netMHCpan directory
+#   1. Use env var if already set and valid
+#   2. Check existing .env for a previously configured path
+#   3. Search common locations (Windows drives + WSL home)
+#   4. Offer to install from tarball, OR ask for existing path
+# ---------------------------------------------------------------------------
 _find_netmhcpan_dir() {
     local version="$1"
     local env_var_name="$2"
@@ -91,11 +94,9 @@ _find_netmhcpan_dir() {
         return
     fi
 
-    # 3. Search Windows user directories via /mnt/c/
+    # 3. Search Windows user directories via /mnt/c/ and WSL home
     local win_user_dir=""
-    # Find the Windows user home (most common: /mnt/c/Users/<name>)
     for candidate in /mnt/c/Users/*/; do
-        # Skip Public, Default, etc.
         local base
         base=$(basename "$candidate")
         if [[ "$base" != "Public" && "$base" != "Default" && "$base" != "Default User" && "$base" != "All Users" ]]; then
@@ -104,39 +105,153 @@ _find_netmhcpan_dir() {
         fi
     done
 
+    local search_dirs=("$HOME")
     if [ -n "$win_user_dir" ]; then
-        local search_dirs=("$win_user_dir" "${win_user_dir}Documents" "${win_user_dir}Downloads" "${win_user_dir}Desktop")
-        for base in "${search_dirs[@]}"; do
-            local found
-            found=$(find "$base" -maxdepth 4 -type d -name "netMHCpan-${version}" 2>/dev/null | head -1)
-            if [ -n "$found" ]; then
-                echo "$found"
+        search_dirs+=("$win_user_dir" "${win_user_dir}Documents" "${win_user_dir}Downloads" "${win_user_dir}Desktop")
+    fi
+
+    for base in "${search_dirs[@]}"; do
+        local found
+        found=$(find "$base" -maxdepth 4 -type d -name "netMHCpan-${version}" 2>/dev/null | head -1)
+        if [ -n "$found" ]; then
+            echo "$found"
+            return
+        fi
+    done
+
+    # 4. Not found — offer to install or ask for path
+    echo "" >&2
+    echo -e "  ${YELLOW}netMHCpan ${version} not found on this machine.${NC}" >&2
+    echo "" >&2
+    echo -e "  ${BOLD}Would you like to install netMHCpan ${version}?${NC}" >&2
+    echo -e "    ${CYAN}[y]${NC} Yes — I have the tarball downloaded (or will download it now)" >&2
+    echo -e "    ${CYAN}[p]${NC} I already have it installed — let me provide the path" >&2
+    echo -e "    ${CYAN}[n]${NC} Skip" >&2
+    echo "" >&2
+    read -rp "  Choice [y/p/n]: " choice
+
+    case "$choice" in
+        [Yy]*)
+            _install_netmhcpan_from_tarball "$version"
+            return
+            ;;
+        [Pp]*)
+            echo -e "  ${DIM}Use WSL-style paths, e.g.: /mnt/c/Users/you/netMHCpan-${version}${NC}" >&2
+            read -rp "  Enter the path to your netMHCpan-${version} directory: " user_path
+            if [ -n "$user_path" ] && [ -d "$user_path" ]; then
+                echo "$user_path"
                 return
             fi
-        done
-    fi
+            echo -e "  ${RED}Directory not found: ${user_path}${NC}" >&2
+            echo ""
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
 
-    # Also search WSL home
-    local found
-    found=$(find "$HOME" -maxdepth 4 -type d -name "netMHCpan-${version}" 2>/dev/null | head -1)
-    if [ -n "$found" ]; then
-        echo "$found"
-        return
-    fi
+# ---------------------------------------------------------------------------
+# Helper: install netMHCpan from a tarball
+# ---------------------------------------------------------------------------
+_install_netmhcpan_from_tarball() {
+    local version="$1"
+    local install_parent="$HOME"
 
-    # 4. Prompt the user
+    # Ask where to install
     echo "" >&2
-    echo -e "  ${YELLOW}Could not auto-detect netMHCpan ${version} directory.${NC}" >&2
-    echo -e "  ${DIM}Download from: https://services.healthtech.dtu.dk/${NC}" >&2
-    echo -e "  ${DIM}Paths should be WSL-style, e.g.: /mnt/c/Users/you/netMHCpan-${version}${NC}" >&2
-    echo "" >&2
-    read -rp "  Enter the path to your netMHCpan-${version} directory (or leave empty to skip): " user_path
-    if [ -n "$user_path" ] && [ -d "$user_path" ]; then
-        echo "$user_path"
-        return
+    read -rp "  Install directory [${install_parent}]: " custom_parent
+    install_parent="${custom_parent:-$install_parent}"
+    mkdir -p "$install_parent" 2>/dev/null || true
+
+    local target_dir="$install_parent/netMHCpan-${version}"
+
+    # Search for existing tarball in common download locations
+    local tarball=""
+    local search_for_tar=("$HOME/Downloads" "$HOME/Desktop" "$HOME")
+    # Also search Windows downloads
+    for candidate in /mnt/c/Users/*/Downloads /mnt/c/Users/*/Desktop; do
+        [ -d "$candidate" ] && search_for_tar+=("$candidate")
+    done
+    for loc in "${search_for_tar[@]}"; do
+        local found
+        found=$(find "$loc" -maxdepth 2 -name "netMHCpan-${version}*.tar.gz" -type f 2>/dev/null | head -1)
+        if [ -n "$found" ]; then
+            tarball="$found"
+            break
+        fi
+    done
+
+    if [ -n "$tarball" ]; then
+        echo -e "  ${GREEN}Found tarball: ${tarball}${NC}" >&2
+        read -rp "  Use this tarball? [Y/n]: " use_it
+        if [[ "$use_it" =~ ^[Nn] ]]; then
+            tarball=""
+        fi
     fi
 
-    echo ""
+    if [ -z "$tarball" ]; then
+        echo "" >&2
+        echo -e "  ${BOLD}Please download netMHCpan ${version} from DTU Health Tech:${NC}" >&2
+        echo -e "  ${CYAN}https://services.healthtech.dtu.dk/services/NetMHCpan-${version}/${NC}" >&2
+        echo -e "  ${DIM}(Registration required — download the Linux .tar.gz file)${NC}" >&2
+        echo "" >&2
+        read -rp "  Path to downloaded .tar.gz file (or leave empty to skip): " tarball
+        if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then
+            echo -e "  ${RED}Tarball not found. Skipping netMHCpan ${version}.${NC}" >&2
+            echo ""
+            return
+        fi
+    fi
+
+    # Extract
+    echo -e "  ${BLUE}ℹ️  Extracting to ${install_parent}/...${NC}" >&2
+    tar -xzf "$tarball" -C "$install_parent" 2>/dev/null
+
+    # The tarball may extract to a slightly different name (e.g. netMHCpan-4.1b)
+    if [ ! -d "$target_dir" ]; then
+        local extracted
+        extracted=$(find "$install_parent" -maxdepth 1 -type d -name "netMHCpan-${version}*" 2>/dev/null | head -1)
+        if [ -n "$extracted" ] && [ "$extracted" != "$target_dir" ]; then
+            mv "$extracted" "$target_dir"
+        fi
+    fi
+
+    if [ -d "$target_dir" ]; then
+        echo -e "  ${GREEN}✅ netMHCpan ${version} installed at: ${target_dir}${NC}" >&2
+
+        # Also look for data tarball and extract if needed
+        local data_count
+        data_count=$(find "$target_dir/data" -type f 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$data_count" -lt 100 ]; then
+            local data_tar=""
+            for dt in "$target_dir/data.tar.gz" "$target_dir/data.Linux.tar.gz"; do
+                if [ -f "$dt" ]; then data_tar="$dt"; break; fi
+            done
+            if [ -z "$data_tar" ]; then
+                local tarball_dir
+                tarball_dir=$(dirname "$tarball")
+                data_tar=$(find "$tarball_dir" -maxdepth 1 \( -name "*data*${version}*.tar.gz" -o -name "data.Linux.tar.gz" -o -name "data.tar.gz" \) 2>/dev/null | head -1)
+                if [ -n "$data_tar" ]; then
+                    cp "$data_tar" "$target_dir/"
+                    data_tar="$target_dir/$(basename "$data_tar")"
+                fi
+            fi
+            if [ -n "$data_tar" ]; then
+                echo -e "  ${BLUE}ℹ️  Extracting data files...${NC}" >&2
+                (cd "$target_dir" && tar -xzf "$(basename "$data_tar")")
+            elif [ "$version" = "4.0" ]; then
+                echo -e "  ${BLUE}ℹ️  Downloading netMHCpan 4.0 data files...${NC}" >&2
+                curl -sS -o "$target_dir/data.Linux.tar.gz" "$NETMHCPAN_40_DATA_URL"
+                (cd "$target_dir" && tar -xzf data.Linux.tar.gz)
+            fi
+        fi
+
+        echo "$target_dir"
+    else
+        echo -e "  ${RED}Extraction failed — directory not found at ${target_dir}${NC}" >&2
+        echo ""
+    fi
 }
 
 # ---------------------------------------------------------------------------
