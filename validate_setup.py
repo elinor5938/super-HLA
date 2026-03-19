@@ -108,7 +108,7 @@ def _check_netmhcpan_executable(install_dir: str, label: str):
         return False, f"Directory not found: {install_dir}"
 
     # Find the best executable (same logic as the pipeline)
-    for wrapper in ("netMHCpan_docker", "netMHCpan_darwin_arm64", "netMHCpan"):
+    for wrapper in ("netMHCpan_docker", "netMHCpan_wsl", "netMHCpan_darwin_arm64", "netMHCpan"):
         path = os.path.join(install_dir, wrapper)
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return True, f"Using {wrapper} in {install_dir}"

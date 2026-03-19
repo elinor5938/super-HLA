@@ -23,7 +23,7 @@ MHC_DIR_PATH = os.environ.get("MHC_DIR_PATH", DEFAULT_MHC_PATH)
 # Wrappers are checked in order: Docker > platform-specific > default.
 def _resolve_executable(install_dir):
     import sys as _sys
-    for wrapper in ("netMHCpan_docker", "netMHCpan_darwin_arm64"):
+    for wrapper in ("netMHCpan_docker", "netMHCpan_wsl", "netMHCpan_darwin_arm64"):
         path = os.path.join(install_dir, wrapper)
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path

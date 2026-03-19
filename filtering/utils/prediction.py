@@ -173,7 +173,7 @@ def _resolve_netmhcpan_executable(install_dir: str) -> str:
       5. ``netMHCpan``             — native tcsh wrapper (default)
     """
     import sys as _sys
-    for wrapper_name in ("netMHCpan_docker", "netMHCpan_darwin_arm64"):
+    for wrapper_name in ("netMHCpan_docker", "netMHCpan_wsl", "netMHCpan_darwin_arm64"):
         wrapper = os.path.join(install_dir, wrapper_name)
         if os.path.isfile(wrapper) and os.access(wrapper, os.X_OK):
             return wrapper

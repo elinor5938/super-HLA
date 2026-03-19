@@ -79,13 +79,23 @@ chmod +x setup_mac.sh
 ./setup_mac.sh
 ```
 
-**Windows** (PowerShell):
+**Windows** (via WSL):
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\setup_windows.ps1
+# First, install WSL (one-time, run PowerShell as Administrator):
+wsl --install
+
+# Then open WSL and navigate to the project:
+wsl
+cd /mnt/c/Users/<you>/code/super-HLA
+
+# Run setup:
+chmod +x setup_windows.sh
+./setup_windows.sh
 ```
 
 Both scripts install all prerequisites, configure `.env`, and are idempotent (safe to re-run).
+
+> **Windows users:** Always run the pipeline from WSL, not from PowerShell. Your project files at `/mnt/c/...` are shared between Windows and WSL.
 
 ### Manual Setup
 
@@ -100,10 +110,10 @@ source .venv/bin/activate
 pip install -U pip && pip install -r requirements.txt
 ```
 
-**Windows:**
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
+**Windows (inside WSL):**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -U pip && pip install -r requirements.txt
 ```
 
@@ -169,14 +179,16 @@ The pipeline auto-detects these wrappers -- if a `netMHCpan_docker` or `netMHCpa
 
 ### Windows with WSL -- Platform Notes
 
-On Windows, netMHCpan and other Linux tools run through **WSL (Windows Subsystem for Linux)**. No Docker is required.
+On Windows, the entire pipeline runs inside **WSL (Windows Subsystem for Linux)**. No Docker is required — Linux binaries run natively.
 
-1. Install WSL (as Administrator): `wsl --install`
-2. Install tools inside WSL: `wsl sudo apt install emboss cd-hit tcsh gawk`
-3. Download the **Linux** tarballs for netMHCpan 4.1 and 4.0 from DTU
-4. The setup script creates `netMHCpan_wsl.bat` wrappers that automatically convert Windows paths to WSL paths and run the Linux binaries through WSL
+**Setup:**
+1. Install WSL (PowerShell as Administrator): `wsl --install`
+2. Open WSL, navigate to project: `cd /mnt/c/Users/<you>/code/super-HLA`
+3. Run: `./setup_windows.sh` — this installs everything via `apt` and creates a `netMHCpan_wsl` wrapper
 
-The pipeline auto-detects the platform and uses the appropriate wrapper (Docker on macOS, WSL on Windows).
+**Running:** Always use WSL (not PowerShell) to run the pipeline. Your Windows files are accessible at `/mnt/c/...`.
+
+The pipeline auto-detects the platform and uses the appropriate wrapper (Docker on macOS, native binary on WSL).
 
 #### 3. Configure `.env`
 
@@ -295,7 +307,7 @@ super-HLA/
 ├── .env                        <- All environment variable configuration
 ├── run.py                      <- Pipeline orchestrator (interactive + CLI)
 ├── setup_mac.sh                <- macOS automated setup (Homebrew + Docker)
-├── setup_windows.ps1           <- Windows automated setup (WSL-based)
+├── setup_windows.sh            <- Windows/WSL automated setup (apt-based)
 ├── requirements.txt
 ├── validate_setup.py           <- Pre-flight check for all prerequisites
 ├── prepare_filtering_data.py   <- Bridges MCMC output to filtering input
