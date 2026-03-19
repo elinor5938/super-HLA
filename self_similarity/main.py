@@ -129,9 +129,29 @@ def run_self_similarity(
     alignments = None
 
     if precomputed and os.path.isfile(precomputed):
-        print(f"\n  Loading pre-computed alignments from: {precomputed}")
-        alignments = load_alignment_results(precomputed)
-        print(f"  Loaded {len(alignments):,} alignments.")
+        print(f"\n  [Step 2] Checking pre-computed alignments at: {precomputed}")
+        candidate_alignments = load_alignment_results(precomputed)
+        # Verify the pre-computed alignments match our current candidates
+        precomputed_peptides = set(entry.get("pep", "") for entry in candidate_alignments)
+        current_peptides = set(all_sequences)
+        if current_peptides.issubset(precomputed_peptides):
+            alignments = candidate_alignments
+            extra = precomputed_peptides - current_peptides
+            if extra:
+                # Filter to only our current candidates
+                alignments = [a for a in alignments if a.get("pep", "") in current_peptides]
+                print(f"  [Step 2] Pre-computed data covers our candidates. Filtered {len(candidate_alignments):,} -> {len(alignments):,} alignments (removed {len(extra)} old peptides)")
+            else:
+                print(f"  [Step 2] Pre-computed data matches exactly. Loaded {len(alignments):,} alignments.")
+        else:
+            missing = current_peptides - precomputed_peptides
+            print(f"  [Step 2] WARNING: Pre-computed alignments are STALE — they don't cover {len(missing)} of our {len(current_peptides)} candidates:")
+            for pep in sorted(missing)[:10]:
+                print(f"           missing: {pep}")
+            if len(missing) > 10:
+                print(f"           ... and {len(missing) - 10} more")
+            print(f"  [Step 2] Ignoring pre-computed data. Will run fresh alignments.")
+            alignments = None
     elif os.path.isdir(NEEDLE_OUTPUT_DIR) and any(
         f.endswith(".txt") for f in os.listdir(NEEDLE_OUTPUT_DIR)
     ):
