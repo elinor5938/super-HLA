@@ -10,7 +10,7 @@ from config import INPUT_DIR_PATH, HLA_STR, NETMHCPAN_EXECUTABLE
 from analysis import create_df_from_netmhcpan_output
 
 
-def _parse_netmhcpan_stdout(stdout_string: str) -> pd.DataFrame:
+def _parse_netmhcpan_stdout(stdout_string: str, stderr_string: str = "") -> pd.DataFrame:
     """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
 
     Handles both 4.1 and 4.2+ output formats. Correctly handles the `<= SB`
@@ -31,7 +31,22 @@ def _parse_netmhcpan_stdout(stdout_string: str) -> pd.DataFrame:
             rows.append({"MHC": mhc, "Peptide": peptide, "%Rank_EL": float(rank)})
 
     if not rows:
-        raise RuntimeError("Failed to parse any data rows from netMHCpan output")
+        import platform
+        # Build a detailed diagnostic message
+        stdout_preview = stdout_string[:2000] if stdout_string else "(empty)"
+        stderr_preview = stderr_string[:1000] if stderr_string else "(empty)"
+        total_lines = len(stdout_string.splitlines()) if stdout_string else 0
+        raise RuntimeError(
+            f"Failed to parse any data rows from netMHCpan output.\n"
+            f"\n"
+            f"--- Diagnostic info ---\n"
+            f"Platform:       {platform.system()} {platform.machine()}\n"
+            f"Executable:     {NETMHCPAN_EXECUTABLE}\n"
+            f"Stdout lines:   {total_lines}\n"
+            f"Stderr preview: {stderr_preview}\n"
+            f"Stdout preview:\n{stdout_preview}\n"
+            f"--- End diagnostic ---"
+        )
 
     return pd.DataFrame(rows)
 
@@ -53,14 +68,34 @@ def send_pep_to_prediction(peptide: str, seed: int) -> pd.DataFrame:
         "-a", HLA_STR
     ]
     
-    # print("sending peptide to prediction")
-    out_object = subprocess.run(command, text=True, capture_output=True, check=True)
+    try:
+        out_object = subprocess.run(command, text=True, capture_output=True, check=True)
+    except subprocess.CalledProcessError as e:
+        import platform
+        raise RuntimeError(
+            f"netMHCpan process exited with code {e.returncode}.\n"
+            f"\n"
+            f"--- Diagnostic info ---\n"
+            f"Platform:   {platform.system()} {platform.machine()}\n"
+            f"Executable: {NETMHCPAN_EXECUTABLE}\n"
+            f"Command:    {' '.join(command)}\n"
+            f"Stderr:     {(e.stderr or '(empty)')[:1000]}\n"
+            f"Stdout:     {(e.stdout or '(empty)')[:1000]}\n"
+            f"--- End diagnostic ---"
+        ) from e
     
     stdout_string = out_object.stdout
+    stderr_string = out_object.stderr or ""
     if "no binaries found" in stdout_string or len(stdout_string.splitlines()) < 3:
-        raise RuntimeError(f"netMHCpan execution failed or returned invalid output. Check your local installation for architecture compatibility.\nOutput was:\n{stdout_string.strip()}")
+        raise RuntimeError(
+            f"netMHCpan execution failed or returned invalid output.\n"
+            f"Executable: {NETMHCPAN_EXECUTABLE}\n"
+            f"Command: {' '.join(command)}\n"
+            f"Stdout:\n{stdout_string.strip()}\n"
+            f"Stderr:\n{stderr_string.strip()}"
+        )
 
-    df = _parse_netmhcpan_stdout(stdout_string)
+    df = _parse_netmhcpan_stdout(stdout_string, stderr_string)
     
     full_df = create_df_from_netmhcpan_output(df)
     return full_df

@@ -106,7 +106,7 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
         supertype containing ``%Rank_EL`` scores, plus a ``total_binders``
         column.
     """
-    netmhcpan_exec = os.path.join(MHC_DIR_PATH, "netMHCpan")
+    netmhcpan_exec = _resolve_netmhcpan_executable(MHC_DIR_PATH)
     command = f"{netmhcpan_exec} -f {peptides_fasta_path} -l 9 -a {HLA_STR}"
 
     cache_path = os.path.join(MEMOIZATION_DIR, "stage-3", "netMHCpan-primary-prediction.pickle")
@@ -117,11 +117,11 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
         cache_path,
     )
 
-    df = _parse_netmhcpan_output(out_object.stdout)
+    df = _parse_netmhcpan_output(out_object.stdout, getattr(out_object, 'stderr', ''), command)
     return _pivot_netmhcpan(df)
 
 
-def _parse_netmhcpan_output(stdout: str) -> pd.DataFrame:
+def _parse_netmhcpan_output(stdout: str, stderr: str = "", command: str = "") -> pd.DataFrame:
     """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
 
     Supports 4.0, 4.1, and 4.2+ output formats. Correctly handles the ``<= SB``
@@ -142,7 +142,24 @@ def _parse_netmhcpan_output(stdout: str) -> pd.DataFrame:
             rows.append({"MHC": mhc, "Peptide": peptide, "%Rank_EL": float(rank)})
 
     if not rows:
-        raise RuntimeError("Failed to parse any data rows from netMHCpan output")
+        import platform
+        import sys
+        stdout_preview = stdout[:2000] if stdout else "(empty)"
+        stderr_preview = stderr[:1000] if stderr else "(empty)"
+        total_lines = len(stdout.splitlines()) if stdout else 0
+        raise RuntimeError(
+            f"Failed to parse any data rows from netMHCpan output.\n"
+            f"\n"
+            f"--- Diagnostic info ---\n"
+            f"Platform:       {platform.system()} {platform.machine()}\n"
+            f"Python:         {sys.executable}\n"
+            f"Command:        {command or '(not captured)'}\n"
+            f"MHC_DIR_PATH:   {MHC_DIR_PATH}\n"
+            f"Stdout lines:   {total_lines}\n"
+            f"Stderr preview: {stderr_preview}\n"
+            f"Stdout preview:\n{stdout_preview}\n"
+            f"--- End diagnostic ---"
+        )
 
     return pd.DataFrame(rows)
 
@@ -218,7 +235,7 @@ def send_to_prediction_as_is_net_4(peptides_fasta_path: str) -> pd.DataFrame:
         cache_path,
     )
 
-    df = _parse_netmhcpan_output(out_object.stdout)
+    df = _parse_netmhcpan_output(out_object.stdout, getattr(out_object, 'stderr', ''), command)
     return _pivot_netmhcpan(df)
 
 
