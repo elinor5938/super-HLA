@@ -229,16 +229,12 @@ def run_needle_alignments(
             filled = int(bar_width * pct)
             bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
             eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
-            sys.stderr.write(
-                f"\r  [Step 2b] [{bar}] {completed}/{len(tasks)} "
-                f"({pct:.0%}) | {elapsed:.0f}s elapsed | ETA {eta_str}  "
+            print(
+                f"  [Step 2b] [{bar}] {completed}/{len(tasks)} "
+                f"({pct:.0%}) | {elapsed:.0f}s elapsed | ETA {eta_str}"
             )
-            sys.stderr.flush()
+            sys.stdout.flush()
             results.append(result)
-
-    elapsed = _time.time() - t_start
-    sys.stderr.write("\r" + " " * 100 + "\r")  # clear progress line
-    sys.stderr.flush()
     print(f"  [Step 2b] All {len(tasks)} peptides aligned in {elapsed:.1f}s")
     sys.stdout.flush()
 
