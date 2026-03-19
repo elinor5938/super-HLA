@@ -125,25 +125,20 @@ def _run_needle_one_peptide_one_chunk(
         return ""
 
 
-def _run_needle_for_peptide(args: tuple) -> dict:
+def _run_needle_one_task(args: tuple) -> dict:
     """Worker function for multiprocessing Pool.
 
-    Args is a tuple of (peptide_name, peptide_seq, chunk_paths, needle_bin).
-    Returns a dict with the peptide name and the combined raw output.
+    Args is a tuple of (peptide_name, peptide_seq, chunk_path, needle_bin).
+    Returns a dict with the peptide name, chunk, and the filtered output.
     """
-    pep_name, pep_seq, chunk_paths, needle_bin = args
-    all_output = []
-
-    for chunk_path in chunk_paths:
-        out = _run_needle_one_peptide_one_chunk(pep_seq, chunk_path, needle_bin)
-        if out.strip():
-            chunk_label = os.path.basename(chunk_path)
-            all_output.append(f"---- B={chunk_label}\n{out}")
-
+    pep_name, pep_seq, chunk_path, needle_bin = args
+    out = _run_needle_one_peptide_one_chunk(pep_seq, chunk_path, needle_bin)
+    chunk_label = os.path.basename(chunk_path)
     return {
         "name": pep_name,
         "seq": pep_seq,
-        "raw_output": "\n".join(all_output),
+        "chunk": chunk_label,
+        "output": f"---- B={chunk_label}\n{out}" if out.strip() else "",
     }
 
 
@@ -199,7 +194,7 @@ def run_needle_alignments(
         if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
             cached_count += 1
             continue  # already computed
-        tasks.append((pep_name, pep_seq, chunk_paths, needle_bin))
+        tasks.append((pep_name, pep_seq))
 
     if not tasks:
         print(f"  [Step 2b] All {len(peptides)} peptide results already cached — skipping needle.")
@@ -207,40 +202,53 @@ def run_needle_alignments(
 
     if cached_count > 0:
         print(f"  [Step 2b] {cached_count} peptides already cached, {len(tasks)} remaining to compute")
-    total_alignments = len(tasks) * len(chunk_paths)
-    print(f"  [Step 2b] Running needle for {len(tasks)} peptides ({total_alignments:,} alignments)...")
-    print(f"            Each peptide is aligned against all {len(chunk_paths)} chunks")
+    total_chunk_tasks = len(tasks) * len(chunk_paths)
+    chunk_size_gb = os.path.getsize(chunk_paths[0]) / (1024**3)
+    print(f"  [Step 2b] Running needle: {len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} alignment jobs")
+    print(f"            Chunk size: ~{chunk_size_gb:.1f} GB each — progress shown per chunk completion")
     sys.stdout.flush()
 
     import time as _time
     t_start = _time.time()
 
-    # Run in parallel with per-peptide progress
+    # Build per-chunk tasks for finer-grained progress
+    chunk_tasks = []
+    for pep_name, pep_seq in tasks:
+        for cp in chunk_paths:
+            chunk_tasks.append((pep_name, pep_seq, cp, needle_bin))
+
+    # Collect results grouped by peptide
+    peptide_outputs = {}
+    for pep_name, pep_seq in tasks:
+        peptide_outputs[pep_name] = {"seq": pep_seq, "parts": []}
+
     completed = 0
-    results = []
     with Pool(processes=workers) as pool:
-        for result in pool.imap_unordered(_run_needle_for_peptide, tasks):
+        for result in pool.imap_unordered(_run_needle_one_task, chunk_tasks):
             completed += 1
             elapsed = _time.time() - t_start
-            avg_per_pep = elapsed / completed
-            remaining = avg_per_pep * (len(tasks) - completed)
+            avg = elapsed / completed
+            remaining = avg * (total_chunk_tasks - completed)
             eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
-            hits = len(result["raw_output"].strip().splitlines()) if result["raw_output"].strip() else 0
             print(
-                f"  [Step 2b] Peptide {completed}/{len(tasks)} done: {result['name']} ({result['seq']}) "
-                f"| {hits} high-identity hits | {elapsed:.0f}s elapsed | ETA ~{eta_str}"
+                f"  [Step 2b] {completed}/{total_chunk_tasks}: "
+                f"{result['name']} ({result['seq']}) vs {result['chunk']} "
+                f"| {elapsed:.0f}s elapsed | ETA ~{eta_str}"
             )
             sys.stdout.flush()
-            results.append(result)
-    print(f"  [Step 2b] All {len(tasks)} peptides aligned in {elapsed:.1f}s")
+            if result["output"]:
+                peptide_outputs[result["name"]]["parts"].append(result["output"])
+
+    elapsed = _time.time() - t_start
+    print(f"  [Step 2b] All {total_chunk_tasks} alignments done in {elapsed:.1f}s")
     sys.stdout.flush()
 
     # Write output files
-    for res in results:
-        out_path = os.path.join(output_dir, f"needle-{res['name']}.txt")
+    for pep_name, data in peptide_outputs.items():
+        out_path = os.path.join(output_dir, f"needle-{pep_name}.txt")
         with open(out_path, "w") as f:
-            f.write(f"### A={res['name']}, seq={res['seq']}\n")
-            f.write(res["raw_output"])
+            f.write(f"### A={pep_name}, seq={data['seq']}\n")
+            f.write("\n".join(data["parts"]))
 
     return output_paths
 
