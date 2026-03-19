@@ -214,9 +214,8 @@ def run_needle_alignments(
 
     import time as _time
     t_start = _time.time()
-    bar_width = 30
 
-    # Run in parallel with progress bar
+    # Run in parallel with per-peptide progress
     completed = 0
     results = []
     with Pool(processes=workers) as pool:
@@ -225,13 +224,11 @@ def run_needle_alignments(
             elapsed = _time.time() - t_start
             avg_per_pep = elapsed / completed
             remaining = avg_per_pep * (len(tasks) - completed)
-            pct = completed / len(tasks)
-            filled = int(bar_width * pct)
-            bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
             eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
+            hits = len(result["raw_output"].strip().splitlines()) if result["raw_output"].strip() else 0
             print(
-                f"  [Step 2b] [{bar}] {completed}/{len(tasks)} "
-                f"({pct:.0%}) | {elapsed:.0f}s elapsed | ETA {eta_str}"
+                f"  [Step 2b] Peptide {completed}/{len(tasks)} done: {result['name']} ({result['seq']}) "
+                f"| {hits} high-identity hits | {elapsed:.0f}s elapsed | ETA ~{eta_str}"
             )
             sys.stdout.flush()
             results.append(result)

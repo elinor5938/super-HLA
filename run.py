@@ -453,9 +453,6 @@ def _run_subprocess_streamed(cmd: list, cwd: str = None, timeout: int = 3600) ->
                 print(f"    {YELLOW}{stripped}{RESET}", flush=True)
             elif "ACCEPTED" in stripped:
                 print(f"    {GREEN}{stripped}{RESET}", flush=True)
-            elif "\u2588" in stripped or "\u2591" in stripped:
-                # Progress bar lines
-                print(f"    {CYAN}{stripped}{RESET}", flush=True)
             elif stripped.startswith("  "):
                 print(f"    {DIM}{stripped}{RESET}", flush=True)
             else:
