@@ -524,7 +524,7 @@ def run_stage_1(seeds: list = None, accepted: int = 100):
 
 
 def run_stage_2():
-    """Run prepare_filtering_data.py."""
+    """Run filtering.prepare_data."""
     stage = STAGES[1]
     _print_stage_header(stage)
     _update_stage_state(2, "running")
@@ -532,11 +532,10 @@ def run_stage_2():
     try:
         t_start = time.time()
 
-        prep_script = os.path.join(PROJECT_ROOT, "prepare_filtering_data.py")
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         _run_subprocess_streamed(
-            [interpreter, "-u", prep_script],
+            [interpreter, "-u", "-m", "filtering.prepare_data"],
             timeout=300,
         )
 

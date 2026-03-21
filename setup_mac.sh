@@ -856,7 +856,7 @@ mkdir -p "$DATA_DIR/stage2-files"
         echo "# NETMHCPAN_40_DIR_PATH=  # NOT CONFIGURED (optional)"
     fi
     echo ""
-    echo "# Filtering data paths (populated by prepare_filtering_data.py after MCMC runs)"
+    echo "# Filtering data paths (populated by filtering.prepare_data after MCMC runs)"
     echo "ROBUST_DF_CSV_PATH=${DATA_DIR}/robust_df.csv"
     echo "SIMULATION_CSV_DIR=${PROJECT_ROOT}/mcmc/output"
     echo "HLA_COMBINATIONS_PICKLE=${DATA_DIR}/all_hla_combinations.pickle"

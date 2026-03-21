@@ -1,5 +1,5 @@
 """
-prepare_filtering_data.py — Build filtering-stage inputs from MCMC output CSVs.
+filtering/prepare_data.py — Build filtering-stage inputs from MCMC output CSVs.
 
 After running the MCMC simulation (one or more seeds), this script:
   1. Combines all per-seed CSVs into a single ``robust_df`` CSV.
@@ -7,7 +7,7 @@ After running the MCMC simulation (one or more seeds), this script:
   3. Updates .env with the correct paths.
 
 Usage (from project root):
-    python prepare_filtering_data.py [--mcmc-output-dir mcmc/output]
+    python -m filtering.prepare_data [--mcmc-output-dir mcmc/output]
 
 This bridges the gap between the MCMC stage output and the filtering stage
 input, so you don't need to manually construct the intermediate files.
@@ -20,7 +20,7 @@ import sys
 import pandas as pd
 
 # Ensure project root is on path
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from filtering.constants import SUPERTYPE_LIST, MIN_HLA_BINDING_COUNT

@@ -2,7 +2,7 @@
 
 This module implements the **four-stage peptide filtering pipeline** that takes raw MCMC simulation output and progressively narrows it down to a high-confidence set of super-binder candidates.
 
-> **Prerequisite:** The MCMC stage must have been run first and `prepare_filtering_data.py` must have been run to set up the filtering inputs. See the main [README.md](../README.md) for the full workflow.
+> **Prerequisite:** The MCMC stage must have been run first and `filtering.prepare_data` must have been run to set up the filtering inputs. See the main [README.md](../README.md) for the full workflow.
 
 ---
 
@@ -56,7 +56,7 @@ flowchart TD
 
 ## Configuration
 
-All paths are configured via the root `.env` file. Most paths are set automatically by `prepare_filtering_data.py`.
+All paths are configured via the root `.env` file. Most paths are set automatically by `filtering.prepare_data`.
 
 | Variable | Description |
 |----------|-------------|

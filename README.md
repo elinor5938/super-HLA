@@ -201,7 +201,7 @@ Create or edit the `.env` file at the project root.
 MHC_DIR_PATH=/path/to/netMHCpan-4.1/
 ```
 
-**Additional variables for Filtering** are automatically configured by `prepare_filtering_data.py` (see below), or can be set manually:
+**Additional variables for Filtering** are automatically configured by `filtering.prepare_data` (see below), or can be set manually:
 
 ```env
 ROBUST_DF_CSV_PATH=/path/to/robust_df.csv
@@ -263,7 +263,7 @@ See [`mcmc/README.md`](mcmc/README.md) for the full CLI reference.
 After running one or more MCMC seeds, bridge the gap to the filtering stage:
 
 ```bash
-python prepare_filtering_data.py
+python -m filtering.prepare_data
 ```
 
 This script:
@@ -319,7 +319,6 @@ super-HLA/
 ├── setup_windows.sh            <- Windows/WSL automated setup (apt-based)
 ├── requirements.txt
 ├── validate_setup.py           <- Pre-flight check for all prerequisites
-├── prepare_filtering_data.py   <- Bridges MCMC output to filtering input
 ├── README.md                   <- You are here (setup + big picture)
 │
 ├── mcmc/

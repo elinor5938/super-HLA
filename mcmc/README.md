@@ -30,7 +30,7 @@ python mcmc/main.py --mode external --seed 9 --fasta mcmc/input/peptides_for_pre
 
 The simulation produces a `.csv` file (one row per MCMC step, both accepted and rejected) in the `mcmc/output/` directory (configurable via the `OUTPUT_DIR_PATH` env var or `--output` flag).
 
-After running one or more seeds, use `prepare_filtering_data.py` from the project root to prepare data for the filtering stage.
+After running one or more seeds, use `python -m filtering.prepare_data` from the project root to prepare data for the filtering stage.
 
 ---
 
