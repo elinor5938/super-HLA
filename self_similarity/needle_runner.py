@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time as _time
 from multiprocessing import Pool
 from typing import Dict, List, Optional
@@ -106,31 +107,13 @@ def _build_needle_cmd(needle_bin: str, peptide: str, chunk_path: str) -> list:
         return [needle_bin] + args
 
 
-def _run_needle_one_peptide_one_chunk(
-    peptide: str, chunk_path: str, needle_bin: str
-) -> str:
-    """Run needle for a single peptide against a single chunk FASTA.
-
-    Returns the filtered output text (or empty string on failure).
-    Uses pure-Python filtering instead of grep for cross-platform compatibility.
-    """
-    cmd = _build_needle_cmd(needle_bin, peptide, chunk_path)
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=7200,
-        )
-        if result.returncode != 0:
-            return ""
-        return _filter_needle_output(result.stdout)
-    except subprocess.TimeoutExpired:
-        return ""
-
-
 def _run_needle_one_task(args: tuple) -> dict:
     """Worker function for multiprocessing Pool.
 
+    Streams needle stdout line-by-line, filtering in real-time and logging
+    progress to a per-worker log file so the user can tail -f it.
+
     Args is a tuple of (peptide_name, peptide_seq, chunk_path, needle_bin, logs_dir).
-    Returns a dict with the peptide name, chunk, and the filtered output.
     """
     pep_name, pep_seq, chunk_path, needle_bin, logs_dir = args
     chunk_label = os.path.basename(chunk_path)
@@ -141,23 +124,119 @@ def _run_needle_one_task(args: tuple) -> dict:
         if log_path:
             with open(log_path, "a") as lf:
                 lf.write(f"[{_time.strftime('%H:%M:%S')}] {msg}\n")
-                lf.flush()
 
-    _log(f"START {pep_name} ({pep_seq}) vs {chunk_label}")
+    chunk_size_bytes = os.path.getsize(chunk_path)
+    chunk_size_mb = chunk_size_bytes / (1024 ** 2)
+    _log(f"START {pep_name} ({pep_seq}) vs {chunk_label} ({chunk_size_mb:.0f} MB)")
+
+    cmd = _build_needle_cmd(needle_bin, pep_seq, chunk_path)
     t0 = _time.time()
-    out = _run_needle_one_peptide_one_chunk(pep_seq, chunk_path, needle_bin)
-    dt = _time.time() - t0
-    hits = out.strip().count("Identity:") if out.strip() else 0
-    _log(f"DONE  {pep_name} vs {chunk_label} — {dt:.1f}s, {hits} hits")
+    alignments_seen = 0
+    hits = 0
+    stdout_bytes = 0
+    stop_heartbeat = threading.Event()
 
-    return {
-        "name": pep_name,
-        "seq": pep_seq,
-        "chunk": chunk_label,
-        "duration": dt,
-        "hits": hits,
-        "output": f"---- B={chunk_label}\n{out}" if out.strip() else "",
-    }
+    # Background heartbeat thread — logs every 30s so the user sees the process is alive
+    def _heartbeat():
+        while not stop_heartbeat.wait(30):
+            elapsed = _time.time() - t0
+            _log(f"  ALIVE {pep_name} vs {chunk_label}: "
+                 f"{alignments_seen:,} alignments processed, {hits} hits, "
+                 f"{stdout_bytes / (1024**2):.0f} MB output read, "
+                 f"{elapsed:.0f}s elapsed")
+
+    hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+    hb_thread.start()
+
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, bufsize=1,
+        )
+
+        # Stream output line-by-line using readline() (not iterator — avoids 8KB buffer).
+        # Filter on-the-fly to avoid storing GBs in memory.
+        result_lines: list = []
+        recent: list = []  # sliding window of last 7 lines
+        pending_forward: int = -1  # lines to look forward after an identity hit
+
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            stdout_bytes += len(line)
+            stripped = line.rstrip("\n")
+
+            # Count alignments for progress
+            if stripped.startswith("# Aligned_sequences:"):
+                alignments_seen += 1
+
+            # On-the-fly filtering: detect Identity lines with >= 6/9
+            if re.search(r'Identity:\s+[6-9]/9', stripped):
+                hits += 1
+                for prev in recent:
+                    if '# 2:' in prev:
+                        result_lines.append(prev.strip())
+                result_lines.append(stripped.strip())
+                pending_forward = 0
+            elif pending_forward >= 0:
+                pending_forward += 1
+                if re.search(r'Similarity:|Score:', stripped):
+                    result_lines.append(stripped.strip())
+                if pending_forward >= 3:
+                    pending_forward = -1
+
+            # Maintain sliding window
+            recent.append(stripped)
+            if len(recent) > 7:
+                recent.pop(0)
+
+        proc.wait(timeout=7200)
+        dt = _time.time() - t0
+        stop_heartbeat.set()
+
+        if proc.returncode != 0:
+            _log(f"FAIL  {pep_name} vs {chunk_label} — exit code {proc.returncode} after {dt:.1f}s")
+            return {
+                "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+                "duration": dt, "hits": 0, "alignments": alignments_seen,
+                "output": "",
+            }
+
+        filtered = "\n".join(result_lines)
+
+        _log(f"DONE  {pep_name} vs {chunk_label} — {dt:.1f}s, "
+             f"{alignments_seen:,} alignments, {hits} high-identity hits")
+
+        return {
+            "name": pep_name,
+            "seq": pep_seq,
+            "chunk": chunk_label,
+            "duration": dt,
+            "hits": hits,
+            "alignments": alignments_seen,
+            "output": f"---- B={chunk_label}\n{filtered}" if filtered.strip() else "",
+        }
+
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stop_heartbeat.set()
+        dt = _time.time() - t0
+        _log(f"TIMEOUT {pep_name} vs {chunk_label} after {dt:.1f}s")
+        return {
+            "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+            "duration": dt, "hits": 0, "alignments": alignments_seen,
+            "output": "",
+        }
+    except Exception as e:
+        stop_heartbeat.set()
+        dt = _time.time() - t0
+        _log(f"ERROR {pep_name} vs {chunk_label}: {e}")
+        return {
+            "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+            "duration": dt, "hits": 0, "alignments": 0,
+            "output": "",
+        }
 
 
 def run_needle_alignments(
@@ -266,7 +345,9 @@ def run_needle_alignments(
             msg = (
                 f"{completed}/{total_chunk_tasks}: "
                 f"{result['name']} ({result['seq']}) vs {result['chunk']} "
-                f"— {result.get('duration', 0):.1f}s, {result.get('hits', 0)} hits "
+                f"— {result.get('duration', 0):.1f}s, "
+                f"{result.get('alignments', 0):,} alignments, "
+                f"{result.get('hits', 0)} high-id hits "
                 f"| {elapsed:.0f}s elapsed | ETA ~{eta_str}"
             )
             print(f"  [Step 2b] {msg}")
@@ -303,4 +384,11 @@ def run_needle_single_peptide(
     Useful for quick tests. Returns the raw filtered output.
     """
     needle_bin = _find_needle()
-    return _run_needle_one_peptide_one_chunk(peptide_seq, reference_fasta, needle_bin)
+    cmd = _build_needle_cmd(needle_bin, peptide_seq, reference_fasta)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        if result.returncode != 0:
+            return ""
+        return _filter_needle_output(result.stdout)
+    except subprocess.TimeoutExpired:
+        return ""
