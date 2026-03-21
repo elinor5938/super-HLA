@@ -1,29 +1,13 @@
 """
 stage2_filter_synthesis.py — Filter peptides that are difficult to chemically synthesize.
 
-After CD-HIT clustering (stage 1) we have ~8 400 candidate representative
-peptides.  Not all of them are practical for wet-lab synthesis.  This stage
-applies a set of rule-based filters to remove peptides with known synthesis
-complications.
+After CD-HIT clustering (stage 1) the remaining candidate peptides are screened
+for known synthesis complications. Rule-based filters remove peptides with
+problematic N-terminal residues, adjacent or co-occurring residue patterns,
+excessive repeats of specific amino acids, and homopolymer runs.
 
-Filters applied (in order of priority, first match wins):
-  1. **Q at N-terminus** — glutamine at position 1 causes cyclization artifacts.
-  2. **MM** — two adjacent methionines are problematic for oxidation.
-  3. **HH** — two adjacent histidines can cause metal chelation issues.
-  4. **DG** — aspartate-glycine motif promotes aspartimide formation.
-  5. **DD** — double aspartate motif.
-  6. **GG** — double glycine reduces structural rigidity.
-  7. **M + C + H simultaneously** — combination of hard-to-protect residues.
-  8. **C + H** — cysteine-histidine pairing.
-  9. **C + M** — cysteine-methionine pairing.
-  10. **≥ 3× M or H total** — excessive methionine / histidine count.
-  11. **Any amino acid repeated 3× consecutively** (e.g. AAA, GGG) — homopolymer
-      runs degrade synthesis quality.
-
-Peptides that pass all filters (``result_no_triple``) are written to a FASTA
-file in ``STAGE2_OUTPUT_DIR`` for use in stage 3.
-
-Expected output size (original dataset): ~6 599 peptides.
+Peptides that pass all filters are written to a FASTA file in
+``STAGE2_OUTPUT_DIR`` for use in stage 3.
 """
 import os
 

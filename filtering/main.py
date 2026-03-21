@@ -100,6 +100,14 @@ def main():
     _sys.stdout.flush()
 
     # ── Stage 3 ──────────────────────────────────────────────────────────────
+    # Remove any existing candidate file so a stale result is never carried
+    # forward when stage 3 produces 0 candidates.
+    from filtering.config import CANDIDATE_PEPTIDES_FASTA as _candidate_path
+    if _candidate_path and os.path.exists(_candidate_path):
+        os.remove(_candidate_path)
+        print(f"\n[Stage 3] Removed previous candidate file: {_candidate_path}")
+        _sys.stdout.flush()
+
     if not stage2_data["filtered_peptides"]:
         print("\n[Stage 3] No peptides to validate — skipping.")
         stage3_data = {"scores_df": None, "top_primary": [], "top_net40": [], "top_flurry": []}
@@ -118,6 +126,10 @@ def main():
     if candidate_fasta:
         _update_env("CANDIDATE_PEPTIDES_FASTA", candidate_fasta)
         print(f"\n[Config] Updated CANDIDATE_PEPTIDES_FASTA in .env -> {candidate_fasta}")
+        _sys.stdout.flush()
+    else:
+        print("\n[WARNING] Stage 3 produced 0 candidate peptides — no candidate FASTA was written.")
+        print("[WARNING] Stage 4 (self-similarity analysis) will not work without candidates.")
         _sys.stdout.flush()
 
     # ── Summary ──────────────────────────────────────────────────────────────

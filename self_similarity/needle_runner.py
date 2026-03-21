@@ -305,11 +305,11 @@ def run_needle_alignments(
     print(f"            Chunk size: ~{chunk_size_gb:.1f} GB each")
     sys.stdout.flush()
 
-    # Set up logs directory for real-time monitoring
-    logs_dir = os.path.join(os.path.dirname(output_dir), "logs")
+    # Set up logs directory for real-time monitoring — one folder per run
+    run_timestamp = _time.strftime("%Y-%m-%d_%H-%M-%S")
+    logs_dir = os.path.join(os.path.dirname(output_dir), "logs", run_timestamp)
     os.makedirs(logs_dir, exist_ok=True)
     progress_log = os.path.join(logs_dir, "progress.log")
-    # Clear previous progress log
     with open(progress_log, "w") as f:
         f.write(f"[{_time.strftime('%H:%M:%S')}] Needle alignment started: "
                 f"{len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} jobs\n")
@@ -319,6 +319,7 @@ def run_needle_alignments(
     print(f"            Progress log:  {progress_log}")
     print(f"            Worker logs:   {logs_dir}/worker_<PID>.log")
     print(f"            >>> Monitor with: tail -f {progress_log}")
+    print(f"  \033[33m⚠️  [WARNING] This process is going to run for a long time (maybe hours) — follow the logs to see progress. ⏳\033[0m")
     sys.stdout.flush()
 
     t_start = _time.time()

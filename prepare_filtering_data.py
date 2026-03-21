@@ -128,7 +128,9 @@ def main():
 
     with open(env_path, "w") as f:
         f.writelines(env_lines)
-    print(f"  Updated {env_path} with filtering paths.")
+    print(f"  Updated {env_path} with:")
+    for key, value in env_updates.items():
+        print(f"    {key}={value}")
 
     print(f"\nDone! You can now run the filtering pipeline:")
     print(f"  python -m filtering.main")

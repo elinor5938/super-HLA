@@ -62,6 +62,12 @@ CDHIT_CLUSTER2_OUTPUT_DIR = os.environ.get("CDHIT_CLUSTER2_OUTPUT_DIR", "")
 STAGE2_OUTPUT_DIR = os.environ.get("STAGE2_OUTPUT_DIR", "")
 """Directory where stage 2 FASTA and CSV outputs are saved."""
 
+CANDIDATE_PEPTIDES_FASTA = os.environ.get(
+    "CANDIDATE_PEPTIDES_FASTA",
+    os.path.join(BASE_DIR, "data", "stage2-files", "candidate_peptides.fasta"),
+)
+"""Path to the candidate peptides FASTA written by stage 3 and read by stage 4."""
+
 # ---------------------------------------------------------------------------
 # MHC prediction tool path (shared with mcmc — reads the same env var)
 # ---------------------------------------------------------------------------

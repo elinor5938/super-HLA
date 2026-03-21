@@ -23,7 +23,7 @@ import os
 
 import pandas as pd
 
-from filtering.config import STAGE2_OUTPUT_DIR, MEMOIZATION_DIR, NETMHCPAN_40_DIR_PATH
+from filtering.config import STAGE2_OUTPUT_DIR, MEMOIZATION_DIR, NETMHCPAN_40_DIR_PATH, CANDIDATE_PEPTIDES_FASTA
 from filtering.constants import SUPERTYPE_LIST
 from filtering.utils.scoring import one_side_trimmed_min
 from filtering.utils.memoize import memoize_function
@@ -191,8 +191,8 @@ def run_stage3(filtered_peptides: list) -> dict:
 
     # ---- Write final candidates FASTA for stage 4 (self-similarity) ----
     final_peptides = list(scores_df.index)
-    candidate_fasta = os.path.join(STAGE2_OUTPUT_DIR, "candidate_peptides.fasta")
-    os.makedirs(STAGE2_OUTPUT_DIR, exist_ok=True)
+    candidate_fasta = CANDIDATE_PEPTIDES_FASTA
+    os.makedirs(os.path.dirname(candidate_fasta), exist_ok=True)
     with open(candidate_fasta, "w") as f:
         for i, pep in enumerate(final_peptides):
             f.write(f">candidate_{i}\n{pep}\n")
