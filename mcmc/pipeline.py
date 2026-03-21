@@ -101,14 +101,14 @@ def send_pep_to_prediction(peptide: str, seed: int) -> pd.DataFrame:
     return full_df
 
 
-def firs_pep_init(peptide: str, seed: int) -> pd.DataFrame:
+def first_pep_init(peptide: str, seed: int) -> pd.DataFrame:
     """Gets a peptide and calculates the first prediction, returning df with initial tracking initialized."""
     first_pep_df = send_pep_to_prediction(peptide, seed)
     
     # Setting initial status for tracking columns
-    first_pep_df["probabilty_res_MCMC"] = ["First"]
-    first_pep_df["all_data_prob"] = ["First"]
-    first_pep_df["delta"] = ["First"]
+    first_pep_df["mcmc_accepted"] = ["First"]
+    first_pep_df["acceptance_probability"] = ["First"]
+    first_pep_df["score_delta"] = ["First"]
     first_pep_df["position_changed"] = ["no change"]
     first_pep_df["former_AA"] = ["no change"]
     first_pep_df["new_AA"] = ["no change"]
@@ -122,18 +122,18 @@ def peptide_creator(length: int) -> str:
 
 
 def mutation_creator(peptide: str) -> tuple:
-    """Randomly mutates exactly one base in the peptide, ensuring the new base is different from the old."""
+    """Randomly mutates exactly one amino acid residue in the peptide, ensuring the new base is different from the old."""
     index = random.choice(range(len(peptide)))
-    old_base = peptide[index]
+    old_residue = peptide[index]
     
     random_amino_acid = random.choice(AMINO_ACID_LIST)
-    while old_base == random_amino_acid:
+    while old_residue == random_amino_acid:
         random_amino_acid = random.choice(AMINO_ACID_LIST)
         
     mutated_peptide = "".join((peptide[:index], random_amino_acid, peptide[index + 1:]))
     position = index + 1  # 1-indexed for logging Output
     
-    return mutated_peptide, position, old_base, random_amino_acid
+    return mutated_peptide, position, old_residue, random_amino_acid
 
 
 def check_delta(df: pd.DataFrame, probability_fn, col_contains_data: str, last_true_val=None):
@@ -160,8 +160,8 @@ def check_delta(df: pd.DataFrame, probability_fn, col_contains_data: str, last_t
     acceptance_flag = random_toss <= prob_res
     
     # Update df
-    df.at[index, "probabilty_res_MCMC"] = acceptance_flag
-    df.at[index, "delta"] = delta
-    df.at[index, "all_data_prob"] = prob_res
+    df.at[index, "mcmc_accepted"] = acceptance_flag
+    df.at[index, "score_delta"] = delta
+    df.at[index, "acceptance_probability"] = prob_res
     
     return df, acceptance_flag

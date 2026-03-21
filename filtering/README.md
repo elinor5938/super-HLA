@@ -15,7 +15,7 @@ flowchart TD
     A([Input: MCMC Simulation CSVs]) --> S0
 
     subgraph Stage 0 - Load Data
-        S0["Load robust_df<br/>Load df_dict<br/>Load all_hla_combinations"]
+        S0["Load accepted_peptides_df<br/>Load df_dict<br/>Load all_hla_combinations"]
         S0 --> S0b["get_peptides_by_hla_threshold<br/>min 8 HLA supertypes"]
     end
 
@@ -45,7 +45,7 @@ flowchart TD
         S3 --> P1["netMHCpan (primary, required)"]
         S3 -.-> P2["netMHCpan 4.0 (optional)"]
         S3 -.-> P3["MHCflurry (optional)"]
-        P1 & P2 & P3 --> Score["Compute one_side_mean<br/>per predictor"]
+        P1 & P2 & P3 --> Score["Compute top8_hla_mean<br/>per predictor"]
         Score --> Top["Select top 3000<br/>per predictor"]
     end
 
@@ -60,7 +60,7 @@ All paths are configured via the root `.env` file. Most paths are set automatica
 
 | Variable | Description |
 |----------|-------------|
-| `ROBUST_DF_CSV_PATH` | Path to combined MCMC results CSV |
+| `ACCEPTED_PEPTIDES_CSV_PATH` | Path to combined MCMC results CSV |
 | `SIMULATION_CSV_DIR` | Directory of per-seed MCMC simulation CSVs |
 | `HLA_COMBINATIONS_PICKLE` | Path to HLA combination mapping pickle |
 | `MEMOIZATION_DIR` | Root directory for all pickle caches |
@@ -68,7 +68,7 @@ All paths are configured via the root `.env` file. Most paths are set automatica
 | `CDHIT_CLUSTER1_OUTPUT_DIR` | CD-HIT output dir for cluster round 1 |
 | `CDHIT_CLUSTER2_INPUT_DIR` | FASTA input dir for cluster round 2 |
 | `CDHIT_CLUSTER2_OUTPUT_DIR` | CD-HIT output dir for cluster round 2 |
-| `STAGE2_OUTPUT_DIR` | Directory for stage 2 FASTA output |
+| `SYNTHESIS_FILTER_OUTPUT_DIR` | Directory for synthesis filter FASTA output |
 | `NETMHCPAN_40_DIR_PATH` | Path to netMHCpan 4.0 (optional, for cross-validation) |
 
 ---

@@ -92,7 +92,7 @@ STAGES = [
     {
         "id": 2,
         "name": "Prepare Filtering Data",
-        "description": "Combine MCMC seeds into robust_df + HLA mapping",
+        "description": "Combine MCMC seeds into accepted_peptides + HLA mapping",
         "module": "prepare",
         "icon": "\U0001f4e6",
     },
@@ -173,34 +173,34 @@ def _detect_stage_status() -> dict:
     else:
         status[1] = {"complete": False, "details": "No MCMC output CSVs found", "files": []}
 
-    # Stage 2: Prepare — check for robust_df.csv and pickle
-    robust_csv = os.path.join(DATA_DIR, "robust_df.csv")
+    # Stage 2: Prepare — check for accepted_peptides.csv and pickle
+    accepted_csv = os.path.join(DATA_DIR, "accepted_peptides.csv")
     hla_pickle = os.path.join(DATA_DIR, "all_hla_combinations.pickle")
-    if os.path.isfile(robust_csv) and os.path.isfile(hla_pickle):
+    if os.path.isfile(accepted_csv) and os.path.isfile(hla_pickle):
         try:
-            row_count = sum(1 for _ in open(robust_csv)) - 1
+            row_count = sum(1 for _ in open(accepted_csv)) - 1
             with open(hla_pickle, "rb") as f:
                 combos = pickle.load(f)
             status[2] = {
                 "complete": True,
                 "details": f"{row_count} peptides, {len(combos)} HLA combinations",
                 "files": [
-                    f"{robust_csv}  ({row_count} peptides)",
+                    f"{accepted_csv}  ({row_count} peptides)",
                     f"{hla_pickle}  ({len(combos)} HLA combos)",
                 ],
             }
         except Exception:
-            status[2] = {"complete": True, "details": "Files exist", "files": [robust_csv, hla_pickle]}
+            status[2] = {"complete": True, "details": "Files exist", "files": [accepted_csv, hla_pickle]}
     else:
         missing = []
-        if not os.path.isfile(robust_csv):
-            missing.append("robust_df.csv")
+        if not os.path.isfile(accepted_csv):
+            missing.append("accepted_peptides.csv")
         if not os.path.isfile(hla_pickle):
             missing.append("HLA pickle")
         status[2] = {"complete": False, "details": f"Missing: {', '.join(missing)}", "files": []}
 
     # Stage 3: Filtering
-    stage2_dir = os.environ.get("STAGE2_OUTPUT_DIR", os.path.join(DATA_DIR, "stage2-files"))
+    stage2_dir = os.environ.get("SYNTHESIS_FILTER_OUTPUT_DIR", os.path.join(DATA_DIR, "stage2-files"))
     memoization_dir = os.environ.get("MEMOIZATION_DIR", os.path.join(DATA_DIR, "memoization"))
 
     stage3_files = []
@@ -542,10 +542,10 @@ def run_stage_2():
         elapsed = time.time() - t_start
 
         # Get details
-        robust_csv = os.path.join(DATA_DIR, "robust_df.csv")
+        accepted_csv = os.path.join(DATA_DIR, "accepted_peptides.csv")
         details = ""
-        if os.path.isfile(robust_csv):
-            row_count = sum(1 for _ in open(robust_csv)) - 1
+        if os.path.isfile(accepted_csv):
+            row_count = sum(1 for _ in open(accepted_csv)) - 1
             details = f"{row_count} unique peptides prepared"
 
         _update_stage_state(2, "done", details)

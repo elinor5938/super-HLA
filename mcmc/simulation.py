@@ -3,7 +3,7 @@ import pandas as pd
 
 from pipeline import (
     peptide_creator, send_pep_to_prediction, mutation_creator, 
-    check_delta, firs_pep_init
+    check_delta, first_pep_init
 )
 from parameters import get_probability_function
 
@@ -25,7 +25,7 @@ def simulation_process(seed: int, external_peptide_str=None, number_of_accepted_
         print(f"  [MCMC] Using external peptide: {peptide}")
 
     print(f"  [MCMC] Running initial MHC binding prediction...")
-    first_pep_df = firs_pep_init(peptide, seed)
+    first_pep_df = first_pep_init(peptide, seed)
     initial_score = first_pep_df[OPTIMIZATION_COLUMN].values[0]
     initial_binders = int(first_pep_df["total_binders"].values[0]) if "total_binders" in first_pep_df.columns else "N/A"
     print(f"  [MCMC] Initial: sum_of_all_hla={initial_score:.4f}, total_binders={initial_binders}")
@@ -84,7 +84,7 @@ def simulation_process(seed: int, external_peptide_str=None, number_of_accepted_
             sys.stdout.flush()
 
         # Break out when we reach target accepted count
-        total_accepted = (appended_data["probabilty_res_MCMC"] == True).sum()  # noqa: E712
+        total_accepted = (appended_data["mcmc_accepted"] == True).sum()  # noqa: E712
         if total_accepted >= number_of_accepted_peptides:
             break
 

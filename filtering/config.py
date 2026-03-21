@@ -23,14 +23,14 @@ _load_env(os.path.join(BASE_DIR, ".env"))
 # Input data paths — set in .env, no defaults (data is user-specific)
 # ---------------------------------------------------------------------------
 
-ROBUST_DF_CSV_PATH = os.environ.get("ROBUST_DF_CSV_PATH", "")
-"""Path to the all_data_frames_sims_october.csv produced by the MCMC pipeline."""
+ACCEPTED_PEPTIDES_CSV_PATH = os.environ.get("ACCEPTED_PEPTIDES_CSV_PATH", "")
+"""Path to the combined MCMC results CSV (one row per accepted peptide)."""
 
 SIMULATION_CSV_DIR = os.environ.get("SIMULATION_CSV_DIR", "")
-"""Directory containing per-seed simulation CSV files (e.g. semi-strict-october-40000/)."""
+"""Directory containing per-seed MCMC simulation output CSV files."""
 
 HLA_COMBINATIONS_PICKLE = os.environ.get("HLA_COMBINATIONS_PICKLE", "")
-"""Path to the all_hla_cominations.pickle file."""
+"""Path to the HLA combinations pickle file (maps HLA combination tuples to integer IDs)."""
 
 # ---------------------------------------------------------------------------
 # Memoization root — all stage-level pickle caches live under subdirectories
@@ -59,7 +59,7 @@ CDHIT_CLUSTER2_OUTPUT_DIR = os.environ.get("CDHIT_CLUSTER2_OUTPUT_DIR", "")
 # Stage output directories
 # ---------------------------------------------------------------------------
 
-STAGE2_OUTPUT_DIR = os.environ.get("STAGE2_OUTPUT_DIR", "")
+SYNTHESIS_FILTER_OUTPUT_DIR = os.environ.get("SYNTHESIS_FILTER_OUTPUT_DIR", "")
 """Directory where stage 2 FASTA and CSV outputs are saved."""
 
 CANDIDATE_PEPTIDES_FASTA = os.environ.get(

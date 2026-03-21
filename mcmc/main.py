@@ -22,12 +22,12 @@ def main_random_peptide(seed: int, accepted_count: int, output_dir: str):
         return None
 
     print(f"Starting simulation with random peptide (Seed: {seed}, Accepted target: {accepted_count})")
-    df_name = simulation_process(seed, number_of_accepted_peptides=accepted_count)
+    simulation_result_df = simulation_process(seed, number_of_accepted_peptides=accepted_count)
 
-    df_name.to_csv(out_path, index=False)
+    simulation_result_df.to_csv(out_path, index=False)
     print(f"Results successfully saved to: {out_path}")
     print("\033[92mMCMC simulation complete — output ready for filtering.\033[0m")
-    return df_name
+    return simulation_result_df
 
 def main_external_peptide_list(seed: int, fasta_path: str, accepted_count: int, output_dir: str):
     """Run simulation for a list of peptides provided via FASTA file."""
@@ -45,16 +45,16 @@ def main_external_peptide_list(seed: int, fasta_path: str, accepted_count: int, 
         
     for i, peptide in enumerate(peptides_list, start=1):
         print(f"[{i}/{len(peptides_list)}] Running simulation for peptide: {peptide}")
-        df_name = simulation_process(seed, peptide, accepted_count)
+        simulation_result_df = simulation_process(seed, peptide, accepted_count)
         
         out_path = os.path.join(output_dir, f"{i}_{seed}_{peptide}.csv")
-        df_name.to_csv(out_path, index=False)
+        simulation_result_df.to_csv(out_path, index=False)
         print(f"Saved: {out_path}")
         
     print("\033[92mWe finished the MCMC simulation part - you can go with the output to the filtering part!\033[0m")
         
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Filtering Algorithm Simulation Workflow")
+    parser = argparse.ArgumentParser(description="MCMC Simulation for Super-Binder Peptide Discovery")
     
     parser.add_argument("--seed", type=int, required=True, help="Random seed for simulation and mutations")
     parser.add_argument("--mode", choices=["random", "external"], default="random", help="Simulation mode: random generation or from fasta file")

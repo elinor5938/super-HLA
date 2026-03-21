@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
-from config import SUPERTYPES_LIST
+from config import SUPERTYPE_LIST
 
-def create_df_from_netmhcpan_output(df: pd.DataFrame, supertypes_list: list = SUPERTYPES_LIST) -> pd.DataFrame:
+def create_df_from_netmhcpan_output(df: pd.DataFrame, supertypes_list: list = SUPERTYPE_LIST) -> pd.DataFrame:
     """Get netMHCpan output as a df and process it."""
     mutant_df = df[df["MHC"].isin(supertypes_list)]
 
@@ -32,10 +32,10 @@ def create_df_from_netmhcpan_output(df: pd.DataFrame, supertypes_list: list = SU
     sb_id = data_hla_as_col[supertypes_list][data_hla_as_col[supertypes_list] <= 0.5].apply(lambda x: x.dropna().index.tolist(), axis=1)
     nb_id = data_hla_as_col[supertypes_list][data_hla_as_col[supertypes_list] > 2].apply(lambda x: x.dropna().index.tolist(), axis=1)
     
-    data_hla_as_col["wb_id"] = wb_id
-    data_hla_as_col["sb_id"] = sb_id
-    data_hla_as_col["nb_id"] = nb_id
-    data_hla_as_col["total_binders_id"] = data_hla_as_col["wb_id"] + data_hla_as_col["sb_id"]
+    data_hla_as_col["weak_binder_hlas"] = wb_id
+    data_hla_as_col["strong_binder_hlas"] = sb_id
+    data_hla_as_col["non_binder_hlas"] = nb_id
+    data_hla_as_col["all_binder_hlas"] = data_hla_as_col["weak_binder_hlas"] + data_hla_as_col["strong_binder_hlas"]
     
     data_hla_as_col.fillna(0, inplace=True)
     

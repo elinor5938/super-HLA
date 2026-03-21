@@ -16,10 +16,10 @@ from filtering.constants import SUPERTYPE_LIST
 # Binding score helpers
 # ---------------------------------------------------------------------------
 
-def one_side_trimmed_min(series: pd.Series) -> float:
+def mean_top8_binding_scores(series: pd.Series) -> float:
     """Returns the mean of the 8 lowest (best) binding rank scores in a series.
 
-    The "one-sided trimmed minimum" is the key metric used throughout the
+    The "mean top-8 binding score" is the key metric used throughout the
     pipeline to represent a peptide's binding strength.  By averaging the 8
     best scores across all supertypes we reward broad coverage while reducing
     noise from marginal binders.
@@ -42,7 +42,7 @@ def create_dict_of_df(directory: str) -> dict:
     """Loads MCMC simulation CSVs from a directory into a dictionary of DataFrames.
 
     Each CSV file represents one simulation seed.  Only rows where
-    ``probabilty_res_MCMC == "True"`` (MCMC-accepted peptides) are retained.
+    ``mcmc_accepted == "True"`` (MCMC-accepted peptides) are retained.
     Duplicate peptides within the same seed are dropped (keeping first
     occurrence), and peptides that already appeared in an earlier seed's file
     are excluded to avoid double-counting across seeds.
@@ -72,7 +72,7 @@ def create_dict_of_df(directory: str) -> dict:
         df = pd.read_csv(os.path.join(directory, filename), low_memory=False)
 
         # Keep only MCMC-accepted rows
-        df = df[df["probabilty_res_MCMC"] == "True"].copy()
+        df = df[df["mcmc_accepted"] == "True"].copy()
         df = df.drop_duplicates(subset="Peptide", keep="first")
 
         if not seen_peptides:
@@ -201,7 +201,7 @@ def get_peptides_by_hla_threshold(
 def select_cluster_consensus(cluster_df: pd.DataFrame, scores_df: pd.DataFrame) -> pd.DataFrame:
     """Selects one representative (consensus) peptide per CD-HIT cluster.
 
-    The representative is the peptide with the lowest ``one_side_mean`` score
+    The representative is the peptide with the lowest ``top8_hla_mean`` score
     within the cluster that does *not* have ``P``, ``D``, or ``E`` at position
     4 (index 3).  If all peptides in a cluster have a PDE at position 4, the
     one with the lowest score is picked regardless.
@@ -212,11 +212,11 @@ def select_cluster_consensus(cluster_df: pd.DataFrame, scores_df: pd.DataFrame) 
             columns ``cluster_n``, ``cluster_size``, ``is_consensus``, and
             ``sim_to_is_consensus``.  The index is the peptide sequence.
         scores_df: The robust DataFrame (from stage 0) containing
-            ``one_side_mean`` per peptide, indexed by ``"Peptide"``.
+            ``top8_hla_mean`` per peptide, indexed by ``"Peptide"``.
 
     Returns:
-        A merged DataFrame with an additional ``"consensus_SB"`` column.
-        Rows where ``consensus_SB == "consensus"`` are the chosen
+        A merged DataFrame with an additional ``"is_representative"`` column.
+        Rows where ``is_representative`` is ``True`` are the chosen
         representatives.
 
     Raises:
@@ -232,30 +232,30 @@ def select_cluster_consensus(cluster_df: pd.DataFrame, scores_df: pd.DataFrame) 
         suffixes=("_cluster", "_y"),
     )
     merged.drop_duplicates(subset="Peptide", keep="first", inplace=True)
-    merged.loc[merged["cluster_size"] == "Singleton", "cluster_size"] = 1
     merged["pos_4"] = [pep[3] for pep in merged["Peptide"]]
-    merged["consensus_SB"] = None
+    merged["is_representative"] = False
 
     PDE = {"P", "D", "E"}
+    # Avoid P/D/E at position 4 (MHC anchor position P2): these residues disrupt binding to most HLA-I supertypes.
 
     for cluster_num in merged["cluster_n"].sort_values().unique():
         cluster_rows = merged[merged["cluster_n"] == cluster_num].copy()
         non_pde_rows = cluster_rows[~cluster_rows["pos_4"].isin(PDE)]
 
         if not non_pde_rows.empty:
-            best_idx = non_pde_rows["one_side_mean"].idxmin()
+            best_idx = non_pde_rows["top8_hla_mean"].idxmin()
         else:
             # All peptides have PDE at position 4 — pick best anyway
-            best_idx = cluster_rows["one_side_mean"].idxmin()
+            best_idx = cluster_rows["top8_hla_mean"].idxmin()
 
-        merged.at[best_idx, "consensus_SB"] = "consensus"
+        merged.at[best_idx, "is_representative"] = True
 
     # Sanity check: one consensus per cluster
     if merged.empty:
         return merged
 
     n_clusters = merged["cluster_n"].max()
-    n_consensus = merged[merged["consensus_SB"] == "consensus"].shape[0]
+    n_consensus = merged[merged["is_representative"]].shape[0]
     if n_clusters != n_consensus:
         raise ValueError(
             f"Consensus count mismatch: expected {n_clusters} clusters "

@@ -5,14 +5,14 @@ This stage is responsible for loading the raw data produced by the MCMC simulati
 and preparing it for the CD-HIT clustering steps that follow.
 
 Inputs (configured via .env):
-  - ROBUST_DF_CSV_PATH      : CSV with all MCMC simulation results combined.
+  - ACCEPTED_PEPTIDES_CSV_PATH      : CSV with all MCMC simulation results combined.
   - SIMULATION_CSV_DIR      : Directory of per-seed simulation output CSVs.
   - HLA_COMBINATIONS_PICKLE : Pickle mapping HLA combination tuples → IDs.
   - MEMOIZATION_DIR         : Root folder for pickle caches.
 
 Output:
   A dictionary with the following keys, returned by ``run_stage0()``:
-  - ``robust_df``                      : The main simulation DataFrame.
+  - ``accepted_peptides_df``                      : The main simulation DataFrame.
   - ``df_dict``                         : Per-seed simulation DataFrames.
   - ``all_hla_combinations``            : Mapping of HLA combos → IDs.
   - ``threshold_8_hla_passing_peptides``: Peptides passing the 8-HLA threshold.
@@ -23,7 +23,7 @@ import pickle
 import pandas as pd
 
 from filtering.config import (
-    ROBUST_DF_CSV_PATH,
+    ACCEPTED_PEPTIDES_CSV_PATH,
     SIMULATION_CSV_DIR,
     HLA_COMBINATIONS_PICKLE,
     MEMOIZATION_DIR,
@@ -31,19 +31,19 @@ from filtering.config import (
 from filtering.constants import SUPERTYPE_LIST, MIN_HLA_BINDING_COUNT
 from filtering.utils.memoize import memoize_function
 from filtering.utils.scoring import (
-    one_side_trimmed_min,
+    mean_top8_binding_scores,
     create_dict_of_df,
     get_peptides_by_hla_threshold,
 )
 
 
-def _load_robust_df() -> pd.DataFrame:
-    """Loads the combined MCMC results CSV and computes the one_side_mean score."""
-    robust_df = pd.read_csv(ROBUST_DF_CSV_PATH)
-    robust_df["one_side_mean"] = robust_df.loc[:, SUPERTYPE_LIST].apply(
-        one_side_trimmed_min, axis=1
+def _load_accepted_peptides() -> pd.DataFrame:
+    """Loads the combined MCMC results CSV and computes the top8_hla_mean score."""
+    accepted_peptides_df = pd.read_csv(ACCEPTED_PEPTIDES_CSV_PATH)
+    accepted_peptides_df["top8_hla_mean"] = accepted_peptides_df.loc[:, SUPERTYPE_LIST].apply(
+        mean_top8_binding_scores, axis=1
     )
-    return robust_df
+    return accepted_peptides_df
 
 
 def _load_hla_combinations() -> dict:
@@ -62,9 +62,9 @@ def run_stage0() -> dict:
     Returns:
         A dictionary with the following keys:
 
-        - ``"robust_df"`` (:class:`pandas.DataFrame`): One row per peptide with
+        - ``"accepted_peptides_df"`` (:class:`pandas.DataFrame`): One row per peptide with
           ``%Rank_EL`` scores for all 12 HLA supertypes and a computed
-          ``one_side_mean`` column.
+          ``top8_hla_mean`` column.
 
         - ``"df_dict"`` (dict): Per-seed DataFrames from the simulation CSV
           directory, keyed by filename stem.
@@ -87,64 +87,64 @@ def run_stage0() -> dict:
     os.makedirs(memo_dir, exist_ok=True)
 
     # Source files for cache invalidation
-    robust_src = [ROBUST_DF_CSV_PATH] if ROBUST_DF_CSV_PATH else []
+    accepted_src = [ACCEPTED_PEPTIDES_CSV_PATH] if ACCEPTED_PEPTIDES_CSV_PATH else []
     hla_src = [HLA_COMBINATIONS_PICKLE] if HLA_COMBINATIONS_PICKLE else []
     sim_csvs = sorted(glob.glob(os.path.join(SIMULATION_CSV_DIR, "*.csv"))) if SIMULATION_CSV_DIR else []
 
-    cache_path = os.path.join(memo_dir, "robust_df.pickle")
+    cache_path = os.path.join(memo_dir, "accepted_peptides_df.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading combined MCMC results from {ROBUST_DF_CSV_PATH}...")
+    print(f"[Sub-stage 0] Loading combined MCMC results from {ACCEPTED_PEPTIDES_CSV_PATH}...")
     if cached:
         # Check if cache is stale
-        if robust_src and os.path.exists(robust_src[0]) and os.path.getmtime(robust_src[0]) > os.path.getmtime(cache_path):
-            print(f"[Stage 0]   (cache stale — source file is newer, recomputing)")
+        if accepted_src and os.path.exists(accepted_src[0]) and os.path.getmtime(accepted_src[0]) > os.path.getmtime(cache_path):
+            print(f"[Sub-stage 0]   (cache stale — source file is newer, recomputing)")
         else:
-            print(f"[Stage 0]   (cached at {cache_path})")
+            print(f"[Sub-stage 0]   (cached at {cache_path})")
     sys.stdout.flush()
-    robust_df = memoize_function(_load_robust_df, cache_path, source_paths=robust_src)
-    print(f"[Stage 0]   -> {len(robust_df)} peptides, {len(robust_df.columns)} columns")
+    accepted_peptides_df = memoize_function(_load_accepted_peptides, cache_path, source_paths=accepted_src)
+    print(f"[Sub-stage 0]   -> {len(accepted_peptides_df)} peptides, {len(accepted_peptides_df.columns)} columns")
     sys.stdout.flush()
 
     cache_path = os.path.join(memo_dir, "all_hla_combinations.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading HLA combination mapping from {HLA_COMBINATIONS_PICKLE}...")
+    print(f"[Sub-stage 0] Loading HLA combination mapping from {HLA_COMBINATIONS_PICKLE}...")
     if cached:
         if hla_src and os.path.exists(hla_src[0]) and os.path.getmtime(hla_src[0]) > os.path.getmtime(cache_path):
-            print(f"[Stage 0]   (cache stale — source file is newer, recomputing)")
+            print(f"[Sub-stage 0]   (cache stale — source file is newer, recomputing)")
         else:
-            print(f"[Stage 0]   (cached)")
+            print(f"[Sub-stage 0]   (cached)")
     sys.stdout.flush()
     all_hla_combinations = memoize_function(_load_hla_combinations, cache_path, source_paths=hla_src)
-    print(f"[Stage 0]   -> {len(all_hla_combinations)} unique HLA combinations")
+    print(f"[Sub-stage 0]   -> {len(all_hla_combinations)} unique HLA combinations")
     sys.stdout.flush()
 
     cache_path = os.path.join(memo_dir, "df_dict.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Loading per-seed simulation DataFrames from {SIMULATION_CSV_DIR}...")
+    print(f"[Sub-stage 0] Loading per-seed simulation DataFrames from {SIMULATION_CSV_DIR}...")
     if cached:
         if sim_csvs and os.path.getmtime(sim_csvs[-1]) > os.path.getmtime(cache_path):
-            print(f"[Stage 0]   (cache stale — CSV files are newer, recomputing)")
+            print(f"[Sub-stage 0]   (cache stale — CSV files are newer, recomputing)")
         else:
-            print(f"[Stage 0]   (cached)")
+            print(f"[Sub-stage 0]   (cached)")
     sys.stdout.flush()
     df_dict = memoize_function(
         lambda: create_dict_of_df(SIMULATION_CSV_DIR), cache_path,
         source_paths=sim_csvs,
     )
-    print(f"[Stage 0]   -> {len(df_dict)} seed files loaded")
+    print(f"[Sub-stage 0]   -> {len(df_dict)} seed files loaded")
     sys.stdout.flush()
 
     # threshold depends on both df_dict and hla_combinations — invalidate if either changed
     cache_path = os.path.join(memo_dir, "threshold_8_hla_passing_peptides.pickle")
-    threshold_sources = robust_src + hla_src + sim_csvs
+    threshold_sources = accepted_src + hla_src + sim_csvs
     cached = os.path.exists(cache_path)
-    print(f"[Stage 0] Filtering peptides binding >={MIN_HLA_BINDING_COUNT} HLA supertypes...")
+    print(f"[Sub-stage 0] Filtering peptides binding >={MIN_HLA_BINDING_COUNT} HLA supertypes...")
     if cached:
         stale = any(os.path.exists(s) and os.path.getmtime(s) > os.path.getmtime(cache_path) for s in threshold_sources)
         if stale:
-            print(f"[Stage 0]   (cache stale — source data is newer, recomputing)")
+            print(f"[Sub-stage 0]   (cache stale — source data is newer, recomputing)")
         else:
-            print(f"[Stage 0]   (cached)")
+            print(f"[Sub-stage 0]   (cached)")
     sys.stdout.flush()
     threshold_8_hla_passing_peptides = memoize_function(
         lambda: get_peptides_by_hla_threshold(
@@ -155,11 +155,11 @@ def run_stage0() -> dict:
         cache_path,
         source_paths=threshold_sources,
     )
-    print(f"[Stage 0]   -> {len(threshold_8_hla_passing_peptides)} HLA combinations passed threshold")
+    print(f"[Sub-stage 0]   -> {len(threshold_8_hla_passing_peptides)} HLA combinations passed threshold")
     sys.stdout.flush()
 
     return {
-        "robust_df": robust_df,
+        "accepted_peptides_df": accepted_peptides_df,
         "df_dict": df_dict,
         "all_hla_combinations": all_hla_combinations,
         "threshold_8_hla_passing_peptides": threshold_8_hla_passing_peptides,

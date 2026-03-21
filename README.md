@@ -204,7 +204,7 @@ MHC_DIR_PATH=/path/to/netMHCpan-4.1/
 **Additional variables for Filtering** are automatically configured by `filtering.prepare_data` (see below), or can be set manually:
 
 ```env
-ROBUST_DF_CSV_PATH=/path/to/robust_df.csv
+ACCEPTED_PEPTIDES_CSV_PATH=/path/to/accepted_peptides.csv
 SIMULATION_CSV_DIR=/path/to/mcmc/output/
 HLA_COMBINATIONS_PICKLE=/path/to/all_hla_combinations.pickle
 MEMOIZATION_DIR=/path/to/memoization/
@@ -212,7 +212,7 @@ CDHIT_CLUSTER1_INPUT_DIR=/path/to/cd-hit/cluster1/input/
 CDHIT_CLUSTER1_OUTPUT_DIR=/path/to/cd-hit/cluster1/output/
 CDHIT_CLUSTER2_INPUT_DIR=/path/to/cd-hit/cluster2/input/
 CDHIT_CLUSTER2_OUTPUT_DIR=/path/to/cd-hit/cluster2/output/
-STAGE2_OUTPUT_DIR=/path/to/stage2-files/
+SYNTHESIS_FILTER_OUTPUT_DIR=/path/to/stage2-files/
 
 # Cross-validation predictor (stage 3)
 NETMHCPAN_40_DIR_PATH=/path/to/netMHCpan-4.0/
@@ -267,7 +267,7 @@ python -m filtering.prepare_data
 ```
 
 This script:
-1. Combines all per-seed CSVs into a single `robust_df.csv`
+1. Combines all per-seed CSVs into a single `accepted_peptides.csv`
 2. Builds the HLA combination mapping pickle
 3. Updates `.env` with the correct paths
 
@@ -356,7 +356,7 @@ super-HLA/
 │   └── filter_self.py          <- Apply similarity thresholds → safe peptide list
 │
 └── data/                       <- Generated at runtime (git-ignored)
-    ├── robust_df.csv
+    ├── accepted_peptides.csv
     ├── all_hla_combinations.pickle
     ├── memoization/
     ├── cd-hit/

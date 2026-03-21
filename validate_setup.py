@@ -270,7 +270,7 @@ def validate() -> dict:
 
     # Filtering .env paths
     for var, is_dir in [
-        ("ROBUST_DF_CSV_PATH", False),
+        ("ACCEPTED_PEPTIDES_CSV_PATH", False),
         ("SIMULATION_CSV_DIR", True),
         ("HLA_COMBINATIONS_PICKLE", False),
         ("MEMOIZATION_DIR", True),
@@ -281,7 +281,7 @@ def validate() -> dict:
     for var in [
         "CDHIT_CLUSTER1_INPUT_DIR", "CDHIT_CLUSTER1_OUTPUT_DIR",
         "CDHIT_CLUSTER2_INPUT_DIR", "CDHIT_CLUSTER2_OUTPUT_DIR",
-        "STAGE2_OUTPUT_DIR",
+        "SYNTHESIS_FILTER_OUTPUT_DIR",
     ]:
         ok, msg = _check_env_var(var, must_exist_on_disk=False)
         add("Filtering", var, ok, msg)

@@ -80,7 +80,7 @@ def parse_cdhit_clusters(cluster_file_path: str) -> pd.DataFrame:
                 cluster_size_col.append(len(cluster))
         else:
             peptide_col.append(cluster[0].lstrip(" "))
-            cluster_size_col.append("Singleton")
+            cluster_size_col.append(1)
 
     result_df = pd.DataFrame(
         index=peptide_col,
@@ -89,10 +89,10 @@ def parse_cdhit_clusters(cluster_file_path: str) -> pd.DataFrame:
 
     for pep in result_df.index:
         if pep in percent_similarity:
-            result_df.at[pep, "is_consensus"] = "No"
+            result_df.at[pep, "is_consensus"] = False
             result_df.at[pep, "sim_to_is_consensus"] = percent_similarity[pep]
         else:
-            result_df.at[pep, "is_consensus"] = "yes"
+            result_df.at[pep, "is_consensus"] = True
             result_df.at[pep, "sim_to_is_consensus"] = "consensus"
 
     result_df["cluster_n"] = cluster_num_col

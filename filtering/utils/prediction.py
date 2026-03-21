@@ -48,7 +48,7 @@ def create_df_from_netmhcpan_output(
         - ``WB``, ``SB``, ``NB``: counts of weak / strong / non-binders.
         - ``WB_delta``, ``SB_delta``, ``NB_delta``: deltas between rows.
         - ``sum_of_all_hla``: sum of all rank scores.
-        - ``wb_id``, ``sb_id``, ``nb_id``, ``total_binders_id``: HLA lists.
+        - ``weak_binder_hlas``, ``strong_binder_hlas``, ``non_binder_hlas``, ``all_binder_hlas``: HLA lists.
         - ``total_binders``: WB + SB count.
     """
     supertypes = pd.Index(supertypes_list)
@@ -70,16 +70,16 @@ def create_df_from_netmhcpan_output(
     pivoted.reset_index(inplace=True)
 
     # Per-HLA binder classification lists
-    pivoted["wb_id"] = pivoted[supertypes][(0.5 < pivoted[supertypes]) & (pivoted[supertypes] <= 2)].apply(
+    pivoted["weak_binder_hlas"] = pivoted[supertypes][(0.5 < pivoted[supertypes]) & (pivoted[supertypes] <= 2)].apply(
         lambda x: x.dropna().index.tolist(), axis=1
     )
-    pivoted["sb_id"] = pivoted[supertypes][pivoted[supertypes] <= 0.5].apply(
+    pivoted["strong_binder_hlas"] = pivoted[supertypes][pivoted[supertypes] <= 0.5].apply(
         lambda x: x.dropna().index.tolist(), axis=1
     )
-    pivoted["nb_id"] = pivoted[supertypes][pivoted[supertypes] > 2].apply(
+    pivoted["non_binder_hlas"] = pivoted[supertypes][pivoted[supertypes] > 2].apply(
         lambda x: x.dropna().index.tolist(), axis=1
     )
-    pivoted["total_binders_id"] = pivoted["wb_id"] + pivoted["sb_id"]
+    pivoted["all_binder_hlas"] = pivoted["weak_binder_hlas"] + pivoted["strong_binder_hlas"]
 
     pivoted.fillna(0, inplace=True)
     pivoted["total_binders"] = pivoted["SB"] + pivoted["WB"]

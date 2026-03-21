@@ -7,7 +7,7 @@ sequence similarity clustering with the CD-HIT tool.
 
 Round 1 — per-combination clustering:
   Each HLA combination's peptide list is clustered independently at 60%
-  similarity.  The best-scoring (lowest one_side_mean) peptide from each
+  similarity.  The best-scoring (lowest top8_hla_mean) peptide from each
   cluster that does not have P/D/E at position 4 is chosen as the consensus.
 
 Round 2 — global re-clustering:
@@ -116,7 +116,7 @@ def _cluster_all_combinations_round1(stage0_data: dict) -> list:
     import sys
 
     threshold_peptides = stage0_data["threshold_8_hla_passing_peptides"]
-    robust_df = stage0_data["robust_df"]
+    accepted_peptides_df = stage0_data["accepted_peptides_df"]
 
     all_consensus: list = []
     total_combos = len(threshold_peptides)
@@ -124,12 +124,12 @@ def _cluster_all_combinations_round1(stage0_data: dict) -> list:
     os.makedirs(CDHIT_CLUSTER1_INPUT_DIR, exist_ok=True)
     os.makedirs(CDHIT_CLUSTER1_OUTPUT_DIR, exist_ok=True)
 
-    print(f"[Stage 1] Round 1: clustering {total_combos} HLA combinations independently...")
+    print(f"[Sub-stage 1] Round 1: clustering {total_combos} HLA combinations independently...")
     sys.stdout.flush()
 
     for i, (combination_id, peptides) in enumerate(threshold_peptides.items(), 1):
         if i % 50 == 1 or i == total_combos:
-            print(f"[Stage 1]   Clustering combination {i}/{total_combos} ({len(peptides)} peptides)...")
+            print(f"[Sub-stage 1]   Clustering combination {i}/{total_combos} ({len(peptides)} peptides)...")
             sys.stdout.flush()
         cluster_df = _run_cdhit(
             peptide_sequences=peptides,
@@ -138,11 +138,11 @@ def _cluster_all_combinations_round1(stage0_data: dict) -> list:
             input_fasta_dir=CDHIT_CLUSTER1_INPUT_DIR,
             output_dir=CDHIT_CLUSTER1_OUTPUT_DIR,
         )
-        consensus_df = select_cluster_consensus(cluster_df, robust_df)
-        consensus_peptides = consensus_df[consensus_df["consensus_SB"] == "consensus"]["index"].tolist()
+        consensus_df = select_cluster_consensus(cluster_df, accepted_peptides_df)
+        consensus_peptides = consensus_df[consensus_df["is_representative"] == True]["index"].tolist()
         all_consensus.append(consensus_peptides)
 
-    print(f"[Stage 1] Round 1 complete: {sum(len(c) for c in all_consensus)} consensus peptides from {total_combos} combinations")
+    print(f"[Sub-stage 1] Round 1 complete: {sum(len(c) for c in all_consensus)} consensus peptides from {total_combos} combinations")
     sys.stdout.flush()
 
     return all_consensus
@@ -185,12 +185,12 @@ def run_stage1(stage0_data: dict) -> dict:
     import sys
 
     flat_peptide_list = [pep for sublist in all_consensus_round1 for pep in sublist]
-    print(f"[Stage 1] Round 1 total consensus peptides (expected ~55,066): {len(flat_peptide_list)}")
+    print(f"[Sub-stage 1] Round 1 total consensus peptides (expected ~55,066): {len(flat_peptide_list)}")
     sys.stdout.flush()
 
     if not flat_peptide_list:
         import pandas as pd
-        print("[Stage 1] No peptides to cluster in round 2 — skipping.")
+        print("[Sub-stage 1] No peptides to cluster in round 2 — skipping.")
         return {
             "consensus_peptides": [],
             "consensus_df_round2": pd.DataFrame(),
@@ -202,7 +202,7 @@ def run_stage1(stage0_data: dict) -> dict:
     # Round 2 — global re-clustering of all round-1 consensus peptides
     cache_path = os.path.join(memo_dir, "cluster_df_round2.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 1] Round 2: global re-clustering of {len(flat_peptide_list)} peptides... {'(cached)' if cached else '(running cd-hit)'}")
+    print(f"[Sub-stage 1] Round 2: global re-clustering of {len(flat_peptide_list)} peptides... {'(cached)' if cached else '(running cd-hit)'}")
     sys.stdout.flush()
     cluster_df_round2 = memoize_function(
         lambda: _run_cdhit(
@@ -217,17 +217,17 @@ def run_stage1(stage0_data: dict) -> dict:
 
     cache_path = os.path.join(memo_dir, "consensus_df_round2.pickle")
     cached = os.path.exists(cache_path)
-    print(f"[Stage 1] Selecting round 2 consensus representatives... {'(cached)' if cached else '(computing)'}")
+    print(f"[Sub-stage 1] Selecting round 2 consensus representatives... {'(cached)' if cached else '(computing)'}")
     sys.stdout.flush()
     consensus_df_round2 = memoize_function(
-        lambda: select_cluster_consensus(cluster_df_round2, stage0_data["robust_df"]),
+        lambda: select_cluster_consensus(cluster_df_round2, stage0_data["accepted_peptides_df"]),
         cache_path,
     )
-    print(f"[Stage 1] Round 2 cluster table rows (expected ~8,435): {len(consensus_df_round2)}")
+    print(f"[Sub-stage 1] Round 2 cluster table rows (expected ~8,435): {len(consensus_df_round2)}")
     sys.stdout.flush()
 
     consensus_peptides = consensus_df_round2[
-        consensus_df_round2["consensus_SB"] == "consensus"
+        consensus_df_round2["is_representative"] == True
     ]["Peptide"].tolist()
 
     return {

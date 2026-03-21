@@ -2,7 +2,7 @@
 filtering/prepare_data.py — Build filtering-stage inputs from MCMC output CSVs.
 
 After running the MCMC simulation (one or more seeds), this script:
-  1. Combines all per-seed CSVs into a single ``robust_df`` CSV.
+  1. Combines all per-seed CSVs into a single ``accepted_peptides_df`` CSV.
   2. Builds the HLA combination mapping pickle.
   3. Updates .env with the correct paths.
 
@@ -54,7 +54,7 @@ def main():
 
     print(f"Found {len(csv_files)} MCMC output CSV(s) in {mcmc_dir}")
 
-    # ---- Step 1: Combine all CSVs into robust_df ----
+    # ---- Step 1: Combine all CSVs into accepted_peptides_df ----
     print(f"\n[Step 1/3] Combining MCMC output CSVs into a single dataset...")
     all_dfs = []
     for i, f in enumerate(sorted(csv_files), 1):
@@ -62,31 +62,31 @@ def main():
         df = pd.read_csv(os.path.join(mcmc_dir, f), low_memory=False)
         # Keep only MCMC-accepted rows (True boolean or "True" string)
         accepted = df[
-            (df["probabilty_res_MCMC"] == True) |  # noqa: E712
-            (df["probabilty_res_MCMC"] == "True")
+            (df["mcmc_accepted"] == True) |  # noqa: E712
+            (df["mcmc_accepted"] == "True")
         ].copy()
         accepted = accepted.drop_duplicates(subset="Peptide", keep="first")
         all_dfs.append(accepted)
         print(f"    {len(df)} total rows, {len(accepted)} accepted peptides")
 
-    robust_df = pd.concat(all_dfs, ignore_index=True)
-    robust_df = robust_df.drop_duplicates(subset="Peptide", keep="first")
-    print(f"  Combined robust_df: {len(robust_df)} unique accepted peptides")
+    accepted_peptides_df = pd.concat(all_dfs, ignore_index=True)
+    accepted_peptides_df = accepted_peptides_df.drop_duplicates(subset="Peptide", keep="first")
+    print(f"  Combined accepted_peptides_df: {len(accepted_peptides_df)} unique accepted peptides")
 
     os.makedirs(data_dir, exist_ok=True)
-    robust_csv_path = os.path.join(data_dir, "robust_df.csv")
-    robust_df.to_csv(robust_csv_path, index=False)
-    print(f"  Saved: {robust_csv_path}")
+    accepted_csv_path = os.path.join(data_dir, "accepted_peptides.csv")
+    accepted_peptides_df.to_csv(accepted_csv_path, index=False)
+    print(f"  Saved: {accepted_csv_path}")
 
     # ---- Step 2: Build HLA combination mapping ----
     print(f"\n[Step 2/3] Building HLA combination mapping...")
     hla_combinations = {}
     combo_id = 0
 
-    for _, row in robust_df.iterrows():
+    for _, row in accepted_peptides_df.iterrows():
         binding_hlas = []
         for hla in SUPERTYPE_LIST:
-            if hla in robust_df.columns and row[hla] < 2:
+            if hla in accepted_peptides_df.columns and row[hla] < 2:
                 binding_hlas.append(hla)
         binding_hlas.sort()
         combo_tuple = tuple(binding_hlas)
@@ -104,7 +104,7 @@ def main():
     print(f"\n[Step 3/3] Updating .env configuration...")
     env_path = os.path.join(PROJECT_ROOT, ".env")
     env_updates = {
-        "ROBUST_DF_CSV_PATH": robust_csv_path,
+        "ACCEPTED_PEPTIDES_CSV_PATH": accepted_csv_path,
         "SIMULATION_CSV_DIR": mcmc_dir,
         "HLA_COMBINATIONS_PICKLE": pickle_path,
     }
