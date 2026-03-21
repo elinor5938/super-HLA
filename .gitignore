@@ -2,6 +2,11 @@
 .venv/
 input/
 output/
+data/
+logs/
+
+# macOS
+.DS_Store
 
 # Python
 __pycache__/

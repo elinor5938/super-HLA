@@ -1,0 +1,395 @@
+"""
+self_similarity/needle_runner.py — Run EMBOSS needle alignments in parallel.
+
+Each candidate peptide is aligned against every sequence in the reference
+peptidome (chunked FASTA files).  High gap penalties enforce ungapped
+global alignment of equal-length 9-mers.
+
+The needle command:
+    needle -asequence asis:<PEPTIDE> -bsequence <CHUNK>
+           -gapopen 100 -gapextend 10 -endweight Y -endopen 100 -endextend 10
+           -error N -warning N -sprotein -stdout Y -filter Y -verbose Y
+
+Output is filtered in Python (no grep dependency) to keep only hits with
+identity >= 6/9, extracting identity, similarity, score, and sequence ID lines.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time as _time
+from multiprocessing import Pool
+from typing import Dict, List, Optional
+
+from self_similarity.config import (
+    NEEDLE_CHUNKS_DIR,
+    NEEDLE_OUTPUT_DIR,
+    NEEDLE_WORKERS,
+)
+
+
+def _find_needle() -> str:
+    """Return the path to the needle executable, or raise."""
+    path = shutil.which("needle")
+    if path:
+        return path
+    # On Windows, try WSL
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ["wsl", "which", "needle"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return "wsl needle"  # Will be used as prefix
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        raise FileNotFoundError(
+            "EMBOSS needle not found. Install WSL and run: sudo apt install emboss"
+        )
+    raise FileNotFoundError(
+        "EMBOSS needle not found on PATH. Install: brew install emboss"
+    )
+
+
+def _filter_needle_output(raw_stdout: str) -> str:
+    """Pure-Python replacement for grep filtering of needle output.
+
+    Keeps blocks around lines matching 'Identity: N/9' where N >= 6,
+    extracting Identity, Similarity, Score, and sequence ID (# 2:) lines.
+    """
+    lines = raw_stdout.splitlines()
+    result_lines = []
+
+    for i, line in enumerate(lines):
+        # Look for identity lines with high identity (6-9 out of 9)
+        if re.search(r'Identity:\s+[6-9]/9', line):
+            # Collect context: look backwards for # 2: line, and forward for similarity/score
+            block = []
+            # Search backwards up to 6 lines for the sequence ID
+            for j in range(max(0, i - 6), i):
+                if '# 2:' in lines[j]:
+                    block.append(lines[j].strip())
+            # The identity line itself
+            block.append(line.strip())
+            # Look forward for similarity and score (up to 3 lines)
+            for j in range(i + 1, min(len(lines), i + 4)):
+                if re.search(r'Similarity:|Score:', lines[j]):
+                    block.append(lines[j].strip())
+            result_lines.extend(block)
+
+    return "\n".join(result_lines)
+
+
+def _build_needle_cmd(needle_bin: str, peptide: str, chunk_path: str) -> list:
+    """Build the needle command as a list (cross-platform)."""
+    args = [
+        "-asequence", f"asis:{peptide}",
+        "-bsequence", chunk_path,
+        "-gapopen", "100", "-gapextend", "10",
+        "-endweight", "Y", "-endopen", "100", "-endextend", "10",
+        "-error", "N", "-warning", "N",
+        "-sprotein", "-stdout", "Y", "-filter", "Y", "-verbose", "Y",
+    ]
+
+    if needle_bin.startswith("wsl "):
+        # Running through WSL on Windows — convert path
+        wsl_chunk = chunk_path.replace("\\", "/")
+        # Convert Windows drive paths to WSL: C:\foo -> /mnt/c/foo
+        if len(wsl_chunk) >= 2 and wsl_chunk[1] == ":":
+            drive = wsl_chunk[0].lower()
+            wsl_chunk = f"/mnt/{drive}{wsl_chunk[2:]}"
+        args[3] = wsl_chunk  # -bsequence
+        return ["wsl", "needle"] + args
+    else:
+        return [needle_bin] + args
+
+
+def _run_needle_one_task(args: tuple) -> dict:
+    """Worker function for multiprocessing Pool.
+
+    Streams needle stdout line-by-line, filtering in real-time and logging
+    progress to a per-worker log file so the user can tail -f it.
+
+    Args is a tuple of (peptide_name, peptide_seq, chunk_path, needle_bin, logs_dir).
+    """
+    pep_name, pep_seq, chunk_path, needle_bin, logs_dir = args
+    chunk_label = os.path.basename(chunk_path)
+    pid = os.getpid()
+    log_path = os.path.join(logs_dir, f"worker_{pid}.log") if logs_dir else None
+
+    def _log(msg):
+        if log_path:
+            with open(log_path, "a") as lf:
+                lf.write(f"[{_time.strftime('%H:%M:%S')}] {msg}\n")
+
+    chunk_size_bytes = os.path.getsize(chunk_path)
+    chunk_size_mb = chunk_size_bytes / (1024 ** 2)
+    _log(f"START {pep_name} ({pep_seq}) vs {chunk_label} ({chunk_size_mb:.0f} MB)")
+
+    cmd = _build_needle_cmd(needle_bin, pep_seq, chunk_path)
+    t0 = _time.time()
+    alignments_seen = 0
+    hits = 0
+    stdout_bytes = 0
+    stop_heartbeat = threading.Event()
+
+    # Background heartbeat thread — logs every 30s so the user sees the process is alive
+    def _heartbeat():
+        while not stop_heartbeat.wait(30):
+            elapsed = _time.time() - t0
+            _log(f"  ALIVE {pep_name} vs {chunk_label}: "
+                 f"{alignments_seen:,} alignments processed, {hits} hits, "
+                 f"{stdout_bytes / (1024**2):.0f} MB output read, "
+                 f"{elapsed:.0f}s elapsed")
+
+    hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+    hb_thread.start()
+
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, bufsize=1,
+        )
+
+        # Stream output line-by-line using readline() (not iterator — avoids 8KB buffer).
+        # Filter on-the-fly to avoid storing GBs in memory.
+        result_lines: list = []
+        recent: list = []  # sliding window of last 7 lines
+        pending_forward: int = -1  # lines to look forward after an identity hit
+
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            stdout_bytes += len(line)
+            stripped = line.rstrip("\n")
+
+            # Count alignments for progress
+            if stripped.startswith("# Aligned_sequences:"):
+                alignments_seen += 1
+
+            # On-the-fly filtering: detect Identity lines with >= 6/9
+            if re.search(r'Identity:\s+[6-9]/9', stripped):
+                hits += 1
+                for prev in recent:
+                    if '# 2:' in prev:
+                        result_lines.append(prev.strip())
+                result_lines.append(stripped.strip())
+                pending_forward = 0
+            elif pending_forward >= 0:
+                pending_forward += 1
+                if re.search(r'Similarity:|Score:', stripped):
+                    result_lines.append(stripped.strip())
+                if pending_forward >= 3:
+                    pending_forward = -1
+
+            # Maintain sliding window
+            recent.append(stripped)
+            if len(recent) > 7:
+                recent.pop(0)
+
+        proc.wait(timeout=7200)
+        dt = _time.time() - t0
+        stop_heartbeat.set()
+
+        if proc.returncode != 0:
+            _log(f"FAIL  {pep_name} vs {chunk_label} — exit code {proc.returncode} after {dt:.1f}s")
+            return {
+                "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+                "duration": dt, "hits": 0, "alignments": alignments_seen,
+                "output": "",
+            }
+
+        filtered = "\n".join(result_lines)
+
+        _log(f"DONE  {pep_name} vs {chunk_label} — {dt:.1f}s, "
+             f"{alignments_seen:,} alignments, {hits} high-identity hits")
+
+        return {
+            "name": pep_name,
+            "seq": pep_seq,
+            "chunk": chunk_label,
+            "duration": dt,
+            "hits": hits,
+            "alignments": alignments_seen,
+            "output": f"---- B={chunk_label}\n{filtered}" if filtered.strip() else "",
+        }
+
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stop_heartbeat.set()
+        dt = _time.time() - t0
+        _log(f"TIMEOUT {pep_name} vs {chunk_label} after {dt:.1f}s")
+        return {
+            "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+            "duration": dt, "hits": 0, "alignments": alignments_seen,
+            "output": "",
+        }
+    except Exception as e:
+        stop_heartbeat.set()
+        dt = _time.time() - t0
+        _log(f"ERROR {pep_name} vs {chunk_label}: {e}")
+        return {
+            "name": pep_name, "seq": pep_seq, "chunk": chunk_label,
+            "duration": dt, "hits": 0, "alignments": 0,
+            "output": "",
+        }
+
+
+def run_needle_alignments(
+    peptides: Dict[str, str],
+    chunks_dir: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    workers: Optional[int] = None,
+) -> List[str]:
+    """Run needle alignments for all candidate peptides.
+
+    Args:
+        peptides: Mapping of peptide name -> sequence (e.g. {"seq0": "ALFPHIMTY"}).
+        chunks_dir: Directory containing chunked reference FASTA files.
+        output_dir: Where to write per-peptide needle output text files.
+        workers: Number of parallel processes (defaults to config).
+
+    Returns:
+        List of output file paths written.
+    """
+    chunks_dir = chunks_dir or NEEDLE_CHUNKS_DIR
+    output_dir = output_dir or NEEDLE_OUTPUT_DIR
+    workers = workers or NEEDLE_WORKERS
+
+    os.makedirs(output_dir, exist_ok=True)
+    needle_bin = _find_needle()
+
+    # Collect chunk files
+    chunk_paths = sorted(
+        os.path.join(chunks_dir, f)
+        for f in os.listdir(chunks_dir)
+        if f.endswith(".fasta")
+    )
+    if not chunk_paths:
+        raise FileNotFoundError(f"No .fasta chunk files found in {chunks_dir}")
+
+    total_alignments = len(peptides) * len(chunk_paths)
+    print(f"  [Step 2b] Needle alignment plan:")
+    print(f"            Candidates:  {len(peptides)} peptides")
+    print(f"            Reference:   {len(chunk_paths)} chunks")
+    print(f"            Total runs:  {total_alignments:,} (each peptide vs each chunk)")
+    print(f"            Workers:     {workers} parallel processes")
+    print(f"            Output dir:  {output_dir}")
+    sys.stdout.flush()
+
+    # Skip peptides that already have output files (resume support)
+    tasks = []
+    output_paths = []
+    cached_count = 0
+    for pep_name, pep_seq in peptides.items():
+        out_path = os.path.join(output_dir, f"needle-{pep_name}.txt")
+        output_paths.append(out_path)
+        if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
+            cached_count += 1
+            continue  # already computed
+        tasks.append((pep_name, pep_seq))
+
+    if not tasks:
+        print(f"  [Step 2b] All {len(peptides)} peptide results already cached — skipping needle.")
+        return output_paths
+
+    if cached_count > 0:
+        print(f"  [Step 2b] {cached_count} peptides already cached, {len(tasks)} remaining to compute")
+    total_chunk_tasks = len(tasks) * len(chunk_paths)
+    chunk_size_gb = os.path.getsize(chunk_paths[0]) / (1024**3)
+    print(f"  [Step 2b] Running needle: {len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} alignment jobs")
+    print(f"            Chunk size: ~{chunk_size_gb:.1f} GB each")
+    sys.stdout.flush()
+
+    # Set up logs directory for real-time monitoring — one folder per run
+    run_timestamp = _time.strftime("%Y-%m-%d_%H-%M-%S")
+    logs_dir = os.path.join(os.path.dirname(output_dir), "logs", run_timestamp)
+    os.makedirs(logs_dir, exist_ok=True)
+    progress_log = os.path.join(logs_dir, "progress.log")
+    with open(progress_log, "w") as f:
+        f.write(f"[{_time.strftime('%H:%M:%S')}] Needle alignment started: "
+                f"{len(tasks)} peptides x {len(chunk_paths)} chunks = {total_chunk_tasks} jobs\n")
+        f.write(f"[{_time.strftime('%H:%M:%S')}] Workers: {workers}\n")
+
+    print(f"  [Step 2b] Logs directory: {logs_dir}")
+    print(f"            Progress log:  {progress_log}")
+    print(f"            Worker logs:   {logs_dir}/worker_<PID>.log")
+    print(f"            >>> Monitor with: tail -f {progress_log}")
+    print(f"  \033[33m⚠️  [WARNING] This process is going to run for a long time (maybe hours) — follow the logs to see progress. ⏳\033[0m")
+    sys.stdout.flush()
+
+    t_start = _time.time()
+
+    # Build per-chunk tasks for finer-grained progress (include logs_dir)
+    chunk_tasks = []
+    for pep_name, pep_seq in tasks:
+        for cp in chunk_paths:
+            chunk_tasks.append((pep_name, pep_seq, cp, needle_bin, logs_dir))
+
+    # Collect results grouped by peptide
+    peptide_outputs = {}
+    for pep_name, pep_seq in tasks:
+        peptide_outputs[pep_name] = {"seq": pep_seq, "parts": []}
+
+    completed = 0
+    with Pool(processes=workers) as pool:
+        for result in pool.imap_unordered(_run_needle_one_task, chunk_tasks):
+            completed += 1
+            elapsed = _time.time() - t_start
+            avg = elapsed / completed
+            remaining = avg * (total_chunk_tasks - completed)
+            eta_str = f"{remaining:.0f}s" if remaining < 3600 else f"{remaining/3600:.1f}h"
+            msg = (
+                f"{completed}/{total_chunk_tasks}: "
+                f"{result['name']} ({result['seq']}) vs {result['chunk']} "
+                f"— {result.get('duration', 0):.1f}s, "
+                f"{result.get('alignments', 0):,} alignments, "
+                f"{result.get('hits', 0)} high-id hits "
+                f"| {elapsed:.0f}s elapsed | ETA ~{eta_str}"
+            )
+            print(f"  [Step 2b] {msg}")
+            sys.stdout.flush()
+            # Also write to progress log file (tail -f friendly)
+            with open(progress_log, "a") as f:
+                f.write(f"[{_time.strftime('%H:%M:%S')}] {msg}\n")
+            if result["output"]:
+                peptide_outputs[result["name"]]["parts"].append(result["output"])
+
+    elapsed = _time.time() - t_start
+    done_msg = f"All {total_chunk_tasks} alignments done in {elapsed:.1f}s"
+    print(f"  [Step 2b] {done_msg}")
+    sys.stdout.flush()
+    with open(progress_log, "a") as f:
+        f.write(f"[{_time.strftime('%H:%M:%S')}] {done_msg}\n")
+
+    # Write output files
+    for pep_name, data in peptide_outputs.items():
+        out_path = os.path.join(output_dir, f"needle-{pep_name}.txt")
+        with open(out_path, "w") as f:
+            f.write(f"### A={pep_name}, seq={data['seq']}\n")
+            f.write("\n".join(data["parts"]))
+
+    return output_paths
+
+
+def run_needle_single_peptide(
+    peptide_seq: str,
+    reference_fasta: str,
+) -> str:
+    """Run needle for a single peptide against a single FASTA (non-chunked).
+
+    Useful for quick tests. Returns the raw filtered output.
+    """
+    needle_bin = _find_needle()
+    cmd = _build_needle_cmd(needle_bin, peptide_seq, reference_fasta)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        if result.returncode != 0:
+            return ""
+        return _filter_needle_output(result.stdout)
+    except subprocess.TimeoutExpired:
+        return ""
