@@ -1,13 +1,13 @@
 """
-self_similarity/main.py — Self-similarity analysis: check if candidate
+filtering/self_similarity/main.py — Self-similarity analysis: check if candidate
 super-binder peptides resemble naturally occurring human peptides.
 
 Usage (from project root):
-    python -m self_similarity.main
+    python -m filtering.self_similarity.main
 
 Or with options:
-    python -m self_similarity.main --candidates data/candidate_peptides.fasta
-    python -m self_similarity.main --precomputed data/needle/alignment_results.json
+    python -m filtering.self_similarity.main --candidates data/candidate_peptides.fasta
+    python -m filtering.self_similarity.main --precomputed data/needle/alignment_results.json
 
 Pipeline:
     1. Load candidate peptides (from filtering output or FASTA file).
@@ -24,14 +24,14 @@ import os
 import sys
 import time
 
-# Ensure project root is on sys.path
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Ensure project root is on sys.path (3 levels up from filtering/self_similarity/main.py)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from Bio import SeqIO
 
-from self_similarity.config import (
+from filtering.self_similarity.config import (
     ALIGNMENT_RESULTS_JSON,
     CANDIDATE_PEPTIDES_FASTA,
     HUMAN_9MERS_FASTA,
@@ -41,8 +41,8 @@ from self_similarity.config import (
     NEEDLE_OUTPUT_DIR,
     SIMILARITY_THRESHOLD,
 )
-from self_similarity.filter_self import filter_candidates, find_self_similar_peptides
-from self_similarity.parse_results import (
+from filtering.self_similarity.filter_self import filter_candidates, find_self_similar_peptides
+from filtering.self_similarity.parse_results import (
     alignments_to_dataframe,
     enrich_with_sequences,
     load_alignment_results,
@@ -189,7 +189,7 @@ def run_self_similarity(
                     )
                 print(f"\n  [Step 2a] Chopping full human proteome into 9-mers...")
                 print(f"            Source: {HUMAN_PROTEOME_FASTA}")
-                from self_similarity.chopper import chop_fasta_to_9mers, split_fasta_into_chunks
+                from filtering.self_similarity.chopper import chop_fasta_to_9mers, split_fasta_into_chunks
 
                 ninemer_path = HUMAN_9MERS_FASTA or os.path.join(
                     _PROJECT_ROOT, "data", "needle", "human_9mers.fasta"
@@ -205,7 +205,7 @@ def run_self_similarity(
                 print(f"\n  [Step 2a] Splitting human 9-mer FASTA into chunks for parallel processing...")
                 print(f"            Source: {HUMAN_9MERS_FASTA} ({file_size:.1f} GB)")
                 print(f"            Output: {NEEDLE_CHUNKS_DIR}")
-                from self_similarity.chopper import split_fasta_into_chunks
+                from filtering.self_similarity.chopper import split_fasta_into_chunks
                 chunks = split_fasta_into_chunks(HUMAN_9MERS_FASTA, NEEDLE_CHUNKS_DIR)
                 print(f"            Created {len(chunks)} chunk files")
         else:
@@ -216,7 +216,7 @@ def run_self_similarity(
         _write_peptides_fasta(pep_dict, CANDIDATE_PEPTIDES_FASTA)
 
         # Run needle alignments
-        from self_similarity.needle_runner import run_needle_alignments
+        from filtering.self_similarity.needle_runner import run_needle_alignments
         run_needle_alignments(pep_dict)
 
         # Parse needle output files into structured alignments

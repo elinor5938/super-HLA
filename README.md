@@ -6,7 +6,7 @@ Super-HLA is a modular computational pipeline for discovering **super-binder pep
 |-------|-----------|-------------|
 | 1. MCMC Simulation | [`mcmc/`](mcmc/) | Stochastic peptide space exploration via Markov Chain Monte Carlo |
 | 2. Filtering | [`filtering/`](filtering/) | Progressive filtering and cross-validation of candidates |
-| 3. Self-Similarity | [`self_similarity/`](self_similarity/) | Remove candidates that resemble human proteome peptides |
+| 3. Self-Similarity | [`filtering/self_similarity/`](self_similarity/) | Remove candidates that resemble human proteome peptides |
 
 Each stage has its own `README.md` with detailed run instructions and flowcharts. This document covers the one-time setup and the big-picture architecture.
 
@@ -284,7 +284,7 @@ See [`filtering/README.md`](filtering/README.md) for the filtering flowchart and
 Check that candidate peptides are not too similar to naturally occurring human peptides:
 
 ```bash
-python -m self_similarity.main
+python -m filtering.self_similarity.main
 ```
 
 This uses EMBOSS `needle` (Needleman-Wunsch global alignment) to compare each candidate 9-mer peptide from stage 3 against all 9-mers from the human proteome. Peptides with high similarity or identity to human self-peptides are removed — a critical safety check for vaccine/immunotherapy applications.
@@ -300,7 +300,7 @@ This file is the reference that candidate peptides are compared against. Without
 **Using pre-computed results:** If you already have an `alignment_results.json` (from a previous run), place it at `data/needle/alignment_results.json` or pass it directly. Note: pre-computed results must match your current candidates — stale results from a different set of peptides will be detected and skipped.
 
 ```bash
-python -m self_similarity.main --precomputed /path/to/alignment_results.json
+python -m filtering.self_similarity.main --precomputed /path/to/alignment_results.json
 ```
 
 **Running fresh:** Fresh needle alignments are compute-intensive (each candidate is aligned against all ~149M human 9-mers). For a small number of candidates (e.g. 7) this takes minutes; for hundreds it can take hours/days.
@@ -345,15 +345,15 @@ super-HLA/
 │       ├── clustering.py       <- CD-HIT .clstr output parser
 │       ├── scoring.py          <- Binding score helpers + DataFrame loaders
 │       └── prediction.py       <- MHC predictor wrappers (netMHCpan + MHCflurry)
-│
-├── self_similarity/
-│   ├── README.md               <- Self-similarity docs and usage
-│   ├── main.py                 <- CLI entry point + orchestrator
-│   ├── config.py               <- .env loader for self-similarity settings
-│   ├── chopper.py              <- 9-mer sliding window FASTA chopper
-│   ├── needle_runner.py        <- Parallel EMBOSS needle alignment runner
-│   ├── parse_results.py        <- Parse needle output → structured JSON/DataFrame
-│   └── filter_self.py          <- Apply similarity thresholds → safe peptide list
+│   │
+│   └── self_similarity/        <- Stage 4: Self-similarity (separate CLI stage due to high compute cost)
+│       ├── README.md            <- Self-similarity docs and usage
+│       ├── main.py              <- CLI entry point + orchestrator
+│       ├── config.py            <- .env loader for self-similarity settings
+│       ├── chopper.py           <- 9-mer sliding window FASTA chopper
+│       ├── needle_runner.py     <- Parallel EMBOSS needle alignment runner
+│       ├── parse_results.py     <- Parse needle output → structured JSON/DataFrame
+│       └── filter_self.py       <- Apply similarity thresholds → safe peptide list
 │
 └── data/                       <- Generated at runtime (git-ignored)
     ├── accepted_peptides.csv

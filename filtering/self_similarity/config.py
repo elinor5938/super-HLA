@@ -1,10 +1,11 @@
 """
-self_similarity/config.py — Load .env variables for the self-similarity stage.
+filtering/filtering/self_similarity/config.py — Load .env variables for the self-similarity stage.
 """
 import os
 import sys
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 3 levels up: filtering/filtering/self_similarity/config.py → filtering/self_similarity → filtering → project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ---------------------------------------------------------------------------
 # Load .env (same as other modules)

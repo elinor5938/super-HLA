@@ -1,5 +1,5 @@
 """
-self_similarity/filter_self.py — Filter candidate peptides by self-similarity.
+filtering/self_similarity/filter_self.py — Filter candidate peptides by self-similarity.
 
 Removes peptides that are too similar to sequences naturally found in the
 human proteome.  A peptide is flagged as "similar to self" if any alignment
@@ -11,7 +11,7 @@ in the needle results meets:
 import pandas as pd
 from typing import Dict, List, Set, Tuple
 
-from self_similarity.config import IDENTITY_THRESHOLD, SIMILARITY_THRESHOLD
+from filtering.self_similarity.config import IDENTITY_THRESHOLD, SIMILARITY_THRESHOLD
 
 
 def find_self_similar_peptides(

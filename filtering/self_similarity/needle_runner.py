@@ -1,5 +1,5 @@
 """
-self_similarity/needle_runner.py — Run EMBOSS needle alignments in parallel.
+filtering/self_similarity/needle_runner.py — Run EMBOSS needle alignments in parallel.
 
 Each candidate peptide is aligned against every sequence in the reference
 peptidome (chunked FASTA files).  High gap penalties enforce ungapped
@@ -23,7 +23,7 @@ import time as _time
 from multiprocessing import Pool
 from typing import Dict, List, Optional
 
-from self_similarity.config import (
+from filtering.self_similarity.config import (
     NEEDLE_CHUNKS_DIR,
     NEEDLE_OUTPUT_DIR,
     NEEDLE_WORKERS,

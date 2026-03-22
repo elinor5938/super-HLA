@@ -31,13 +31,13 @@ If you have `alignment_results.json` from a previous run:
 cp /path/to/alignment_results.json data/needle/
 
 # Run analysis
-python -m self_similarity.main
+python -m filtering.self_similarity.main
 ```
 
 Or pass it directly:
 
 ```bash
-python -m self_similarity.main --precomputed /path/to/alignment_results.json
+python -m filtering.self_similarity.main --precomputed /path/to/alignment_results.json
 ```
 
 ### Running fresh needle alignments
@@ -51,13 +51,13 @@ This requires:
 HUMAN_9MERS_FASTA=/path/to/noncoding_9mers.fasta
 
 # Run (WARNING: extremely slow — hours/days for 100 peptides)
-python -m self_similarity.main --candidates data/candidate_peptides.fasta
+python -m filtering.self_similarity.main --candidates data/candidate_peptides.fasta
 ```
 
 ### Programmatic usage
 
 ```python
-from self_similarity.main import run_self_similarity
+from filtering.self_similarity.main import run_self_similarity
 
 # With a list of peptide sequences
 result = run_self_similarity(

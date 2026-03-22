@@ -106,8 +106,8 @@ STAGES = [
     {
         "id": 4,
         "name": "Self-Similarity Analysis",
-        "description": "Remove candidates similar to human proteome peptides",
-        "module": "self_similarity",
+        "description": "Remove candidates similar to human proteome peptides (separate due to high compute cost)",
+        "module": "filtering.self_similarity",
         "icon": "\U0001f9ec",
     },
 ]
@@ -587,7 +587,13 @@ def run_stage_3():
 
 
 def run_stage_4():
-    """Run self-similarity analysis."""
+    """Run self-similarity analysis.
+
+    This is part of the filtering package (filtering/self_similarity/) but is
+    exposed as a separate CLI stage because it is extremely compute-intensive
+    (hours to days for fresh needle alignments) and may require pre-computed
+    alignment results.
+    """
     stage = STAGES[3]
     _print_stage_header(stage)
     _update_stage_state(4, "running")
@@ -598,7 +604,7 @@ def run_stage_4():
         interpreter = VENV_PYTHON if os.path.isfile(VENV_PYTHON) else sys.executable
 
         _run_subprocess_streamed(
-            [interpreter, "-u", "-m", "self_similarity.main"],
+            [interpreter, "-u", "-m", "filtering.self_similarity.main"],
             cwd=PROJECT_ROOT,
             timeout=86400,  # can be very long
         )

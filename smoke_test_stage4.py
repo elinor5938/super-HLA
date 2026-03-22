@@ -88,7 +88,7 @@ def main():
     # 4. Run the actual stage 4 entry point
     print("\n  [Run] Calling run_self_similarity() — the real stage 4 code...")
     print()
-    from self_similarity.main import run_self_similarity
+    from filtering.self_similarity.main import run_self_similarity
     result = run_self_similarity(candidates_fasta=candidates_fasta, output_dir=test_dir)
 
     # 5. Validate expected outcomes

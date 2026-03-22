@@ -1,12 +1,12 @@
 """
-self_similarity/chopper.py — Chop a protein FASTA into overlapping 9-mer peptides.
+filtering/self_similarity/chopper.py — Chop a protein FASTA into overlapping 9-mer peptides.
 
 This is a one-time preprocessing step.  The output can be 10–20 GB for a
 full human proteome, so the function streams to disk without holding
 everything in memory.
 
 Usage (standalone):
-    python -m self_similarity.chopper \\
+    python -m filtering.self_similarity.chopper \\
         --input  /path/to/human_proteome.fasta \\
         --output /path/to/human_9mers.fasta
 
