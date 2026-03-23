@@ -13,7 +13,7 @@ from analysis import create_df_from_netmhcpan_output
 def _parse_netmhcpan_stdout(stdout_string: str, stderr_string: str = "") -> pd.DataFrame:
     """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
 
-    Handles both 4.1 and 4.2+ output formats. Correctly handles the `<= SB`
+    Handles 4.1 output format. Correctly handles the `<= SB`
     and `<= WB` binding level markers that break naive whitespace-based parsing.
     """
     rows = []

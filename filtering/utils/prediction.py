@@ -95,7 +95,7 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
     """Runs the primary netMHCpan installation on a FASTA file and returns binding scores.
 
     Uses whichever netMHCpan version is configured via MHC_DIR_PATH (supports
-    4.1 and 4.2+ output formats). Results are cached in the stage-3 memoization
+    4.1 output format). Results are cached in the stage-3 memoization
     subdirectory so that the expensive subprocess call is skipped on re-runs.
 
     Args:
@@ -124,7 +124,7 @@ def send_to_prediction_as_is(peptides_fasta_path: str) -> pd.DataFrame:
 def _parse_netmhcpan_output(stdout: str, stderr: str = "", command: str = "") -> pd.DataFrame:
     """Parses netMHCpan stdout into a DataFrame with MHC, Peptide, %Rank_EL columns.
 
-    Supports 4.0, 4.1, and 4.2+ output formats. Correctly handles the ``<= SB``
+    Supports 4.0 and 4.1 output formats. Correctly handles the ``<= SB``
     and ``<= WB`` binding level markers that break naive whitespace-based parsing.
     """
     rows = []
@@ -207,7 +207,7 @@ def send_to_prediction_as_is_net_4(peptides_fasta_path: str) -> pd.DataFrame:
     """Runs a secondary netMHCpan installation on a FASTA file for cross-validation.
 
     Uses whichever netMHCpan version is at ``NETMHCPAN_40_DIR_PATH`` (supports
-    4.0, 4.1, and 4.2 output formats).
+    4.0 and 4.1 output formats).
 
     Args:
         peptides_fasta_path: Absolute path to the input FASTA file.
