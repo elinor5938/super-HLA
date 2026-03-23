@@ -16,9 +16,9 @@ are memoized to disk — re-running skips expensive steps that are already done.
 Prerequisites:
   1. Both MCMC and filtering .env variables must be configured (see README.md).
   2. cd-hit must be installed and on your PATH.
-  3. netMHCpan 4.1 or 4.2 must be installed.
-  4. (Optional) netMHCpan 4.0 for cross-validation.
-  5. (Optional) Python package mhcflurry for cross-validation.
+  3. netMHCpan 4.1 must be installed.
+  4. netMHCpan 4.0 must be installed for cross-validation.
+  5. Python package mhcflurry must be installed for cross-validation.
 """
 import os
 import sys

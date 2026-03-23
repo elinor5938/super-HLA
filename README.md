@@ -132,7 +132,7 @@ pip install -U pip && pip install -r requirements.txt
 
 ### macOS on Apple Silicon (arm64) -- Platform Notes
 
-netMHCpan versions older than 4.2 do not ship native arm64 macOS binaries. This pipeline handles it automatically with platform-specific wrappers:
+netMHCpan does not ship native arm64 macOS binaries. This pipeline handles it automatically with platform-specific wrappers:
 
 | Version | Available binary | Solution |
 |---------|-----------------|----------|

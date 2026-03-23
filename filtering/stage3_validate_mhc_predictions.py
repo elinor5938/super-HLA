@@ -2,19 +2,16 @@
 stage3_validate_mhc_predictions.py — Validate candidate peptides with MHC predictors.
 
 This stage takes the synthesis-feasible peptides from stage 2 and runs them
-through up to three independent MHC binding predictors to cross-validate
+through three independent MHC binding predictors to cross-validate
 their super-binder status:
 
-  1. **netMHCpan (primary)** — whichever version is at MHC_DIR_PATH (required)
-  2. **netMHCpan 4.0** — legacy model for comparison (optional)
-  3. **MHCflurry** — affinity prediction model (optional)
+  1. **netMHCpan (primary)** — whichever version is at MHC_DIR_PATH
+  2. **netMHCpan 4.0** — legacy model for comparison
+  3. **MHCflurry** — affinity prediction model
 
 For each predictor, a ``top8_hla_mean`` score is computed (mean of the 8 best
 HLA binding scores — lower is better).  The top 3 000 peptides per predictor
 are selected.
-
-netMHCpan 4.0 and MHCflurry are optional — if not configured/installed, those
-predictors are skipped and the corresponding result keys will be empty DataFrames.
 
 All prediction results are memoized so expensive subprocess calls are
 skipped on re-runs.  Delete ``MEMOIZATION_DIR/stage-3/*.pickle`` to re-run.
@@ -45,19 +42,17 @@ def _select_top_n(df: pd.DataFrame, score_col: str, n: int) -> pd.DataFrame:
 
 
 def run_stage3(filtered_peptides: list) -> dict:
-    """Validates peptides using available MHC predictors and selects the best binders.
+    """Validates peptides using all three MHC predictors and selects the best binders.
 
-    The primary netMHCpan prediction (MHC_DIR_PATH) is always run.
-    netMHCpan 4.0 and MHCflurry are optional — they are skipped if not
-    configured or not installed, with a warning printed.
+    Runs the primary netMHCpan, netMHCpan 4.0, and MHCflurry predictions
+    for cross-validation.
 
     Args:
         filtered_peptides: The synthesis-feasible peptide list from stage 2.
 
     Returns:
         A dictionary with keys: ``scores_df``, ``top_primary``,
-        ``top_net40``, ``top_flurry``. Optional predictors return empty
-        DataFrames if skipped.
+        ``top_net40``, ``top_flurry``.
     """
     import sys
     import time
@@ -76,7 +71,7 @@ def run_stage3(filtered_peptides: list) -> dict:
     }
 
     print(f"[Sub-stage 3] Input: {len(filtered_peptides)} peptides from {input_fasta}")
-    print(f"[Sub-stage 3] Will run up to 3 MHC binding predictors for cross-validation")
+    print(f"[Sub-stage 3] Will run 3 MHC binding predictors for cross-validation")
     sys.stdout.flush()
 
     # ---- Primary netMHCpan (required) ----
@@ -90,45 +85,30 @@ def run_stage3(filtered_peptides: list) -> dict:
     print(f"[Sub-stage 3] [1/3] Primary netMHCpan complete ({time.time() - t:.1f}s) — {len(primary_df)} peptides scored")
     sys.stdout.flush()
 
-    # ---- netMHCpan 4.0 (optional) ----
-    net_40_df = None
-    if NETMHCPAN_40_DIR_PATH:
-        try:
-            print("[Sub-stage 3] [2/3] Running netMHCpan 4.0 prediction...")
-            sys.stdout.flush()
-            t = time.time()
-            net_40_df = send_to_prediction_as_is_net_4(input_fasta)
-            net_40_df.index.name = "Peptide"
-            net_40_df.columns = [f"{col}_netMHCpan_4.0" for col in net_40_df.columns]
-            predictor_dfs.append(net_40_df)
-            print(f"[Sub-stage 3] [2/3] netMHCpan 4.0 complete ({time.time() - t:.1f}s) — {len(net_40_df)} peptides scored")
-            sys.stdout.flush()
-        except Exception as e:
-            print(f"[Sub-stage 3] [2/3] WARNING: netMHCpan 4.0 failed ({e}), skipping.")
-            sys.stdout.flush()
-    else:
-        print("[Sub-stage 3] [2/3] netMHCpan 4.0 not configured — skipping")
-        sys.stdout.flush()
+    # ---- netMHCpan 4.0 ----
+    print("[Sub-stage 3] [2/3] Running netMHCpan 4.0 prediction...")
+    sys.stdout.flush()
+    t = time.time()
+    net_40_df = send_to_prediction_as_is_net_4(input_fasta)
+    net_40_df.index.name = "Peptide"
+    net_40_df.columns = [f"{col}_netMHCpan_4.0" for col in net_40_df.columns]
+    predictor_dfs.append(net_40_df)
+    print(f"[Sub-stage 3] [2/3] netMHCpan 4.0 complete ({time.time() - t:.1f}s) — {len(net_40_df)} peptides scored")
+    sys.stdout.flush()
 
-    # ---- MHCflurry (optional) ----
-    flurry_df = None
-    try:
-        import mhcflurry  # noqa: F401
-        print("[Sub-stage 3] [3/3] Running MHCflurry prediction...")
-        sys.stdout.flush()
-        t = time.time()
-        flurry_df = memoize_function(
-            lambda: send_to_mhcflurry(filtered_peptides),
-            os.path.join(memo_dir, "mhcflurry-prediction.pickle"),
-        )
-        flurry_df.index.name = "Peptide"
-        flurry_df.columns = [f"{col}_flurry" for col in flurry_df.columns]
-        predictor_dfs.append(flurry_df)
-        print(f"[Sub-stage 3] [3/3] MHCflurry complete ({time.time() - t:.1f}s) — {len(flurry_df)} peptides scored")
-        sys.stdout.flush()
-    except ImportError:
-        print("[Sub-stage 3] [3/3] MHCflurry not installed — skipping")
-        sys.stdout.flush()
+    # ---- MHCflurry ----
+    print("[Sub-stage 3] [3/3] Running MHCflurry prediction...")
+    sys.stdout.flush()
+    t = time.time()
+    flurry_df = memoize_function(
+        lambda: send_to_mhcflurry(filtered_peptides),
+        os.path.join(memo_dir, "mhcflurry-prediction.pickle"),
+    )
+    flurry_df.index.name = "Peptide"
+    flurry_df.columns = [f"{col}_flurry" for col in flurry_df.columns]
+    predictor_dfs.append(flurry_df)
+    print(f"[Sub-stage 3] [3/3] MHCflurry complete ({time.time() - t:.1f}s) — {len(flurry_df)} peptides scored")
+    sys.stdout.flush()
 
     # ---- Combine available predictor scores ----
     print("[Sub-stage 3] Combining scores from all available predictors...")
@@ -142,19 +122,17 @@ def run_stage3(filtered_peptides: list) -> dict:
         result["top_primary"] = _select_top_n(scores_df, "top8_hla_mean_primary", TOP_N_PEPTIDES)
         print(f"[Sub-stage 3] Top {TOP_N_PEPTIDES} by primary netMHCpan: {len(result['top_primary'])}")
 
-    if net_40_df is not None:
-        net_40_cols = [c for c in scores_df.columns if c.endswith("_netMHCpan_4.0") and c.split("_netMHCpan")[0] in SUPERTYPE_LIST]
-        if net_40_cols:
-            scores_df["top8_hla_mean_net40"] = scores_df[net_40_cols].apply(mean_top8_binding_scores, axis=1)
-            result["top_net40"] = _select_top_n(scores_df, "top8_hla_mean_net40", TOP_N_PEPTIDES)
-            print(f"[Sub-stage 3] Top {TOP_N_PEPTIDES} by netMHCpan 4.0: {len(result['top_net40'])}")
+    net_40_cols = [c for c in scores_df.columns if c.endswith("_netMHCpan_4.0") and c.split("_netMHCpan")[0] in SUPERTYPE_LIST]
+    if net_40_cols:
+        scores_df["top8_hla_mean_net40"] = scores_df[net_40_cols].apply(mean_top8_binding_scores, axis=1)
+        result["top_net40"] = _select_top_n(scores_df, "top8_hla_mean_net40", TOP_N_PEPTIDES)
+        print(f"[Sub-stage 3] Top {TOP_N_PEPTIDES} by netMHCpan 4.0: {len(result['top_net40'])}")
 
-    if flurry_df is not None:
-        flurry_cols = [c for c in scores_df.columns if c.endswith("_flurry")]
-        if flurry_cols:
-            scores_df["top8_hla_mean_flurry"] = scores_df[flurry_cols].apply(mean_top8_binding_scores, axis=1)
-            result["top_flurry"] = _select_top_n(scores_df, "top8_hla_mean_flurry", TOP_N_PEPTIDES)
-            print(f"[Sub-stage 3] Top {TOP_N_PEPTIDES} by MHCflurry: {len(result['top_flurry'])}")
+    flurry_cols = [c for c in scores_df.columns if c.endswith("_flurry")]
+    if flurry_cols:
+        scores_df["top8_hla_mean_flurry"] = scores_df[flurry_cols].apply(mean_top8_binding_scores, axis=1)
+        result["top_flurry"] = _select_top_n(scores_df, "top8_hla_mean_flurry", TOP_N_PEPTIDES)
+        print(f"[Sub-stage 3] Top {TOP_N_PEPTIDES} by MHCflurry: {len(result['top_flurry'])}")
 
     # ---- Cross-predictor agreement summary ----
     all_peptide_sets = []

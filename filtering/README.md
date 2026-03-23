@@ -42,9 +42,9 @@ flowchart TD
 
     subgraph Stage 3 - MHC Cross-Validation
         S3[Run available predictors on FASTA]
-        S3 --> P1["netMHCpan (primary, required)"]
-        S3 -.-> P2["netMHCpan 4.0 (optional)"]
-        S3 -.-> P3["MHCflurry (optional)"]
+        S3 --> P1["netMHCpan (primary)"]
+        S3 --> P2["netMHCpan 4.0"]
+        S3 --> P3["MHCflurry"]
         P1 & P2 & P3 --> Score["Compute top8_hla_mean<br/>per predictor"]
         Score --> Top["Select top 3000<br/>per predictor"]
     end
@@ -69,7 +69,7 @@ All paths are configured via the root `.env` file. Most paths are set automatica
 | `CDHIT_CLUSTER2_INPUT_DIR` | FASTA input dir for cluster round 2 |
 | `CDHIT_CLUSTER2_OUTPUT_DIR` | CD-HIT output dir for cluster round 2 |
 | `SYNTHESIS_FILTER_OUTPUT_DIR` | Directory for synthesis filter FASTA output |
-| `NETMHCPAN_40_DIR_PATH` | Path to netMHCpan 4.0 (optional, for cross-validation) |
+| `NETMHCPAN_40_DIR_PATH` | Path to netMHCpan 4.0 (for cross-validation) |
 
 ---
 
@@ -119,8 +119,8 @@ filtering/
 | Tool | Used in | Install |
 |------|---------|---------|
 | `cd-hit` | Stage 1 | `brew install cd-hit` (macOS) |
-| `netMHCpan 4.1 or 4.2` | Stage 3 (primary) | [DTU download page](https://services.healthtech.dtu.dk/) |
-| `netMHCpan 4.0` | Stage 3 (optional) | Same DTU page |
-| `mhcflurry` | Stage 3 (optional) | `pip install mhcflurry && mhcflurry-downloads fetch` |
+| `netMHCpan 4.1` | Stage 3 (primary) | [DTU download page](https://services.healthtech.dtu.dk/) |
+| `netMHCpan 4.0` | Stage 3 | Same DTU page |
+| `mhcflurry` | Stage 3 | `pip install mhcflurry && mhcflurry-downloads fetch` |
 
-Stage 3 requires the primary netMHCpan installation (configured via `MHC_DIR_PATH`). netMHCpan 4.0 and MHCflurry are optional -- if not configured or installed, those predictors are automatically skipped with a warning.
+Stage 3 requires all three predictors for cross-validation: the primary netMHCpan (configured via `MHC_DIR_PATH`), netMHCpan 4.0 (configured via `NETMHCPAN_40_DIR_PATH`), and MHCflurry (`pip install mhcflurry && mhcflurry-downloads fetch`).
